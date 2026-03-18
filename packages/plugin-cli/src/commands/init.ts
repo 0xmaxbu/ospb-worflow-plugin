@@ -1,16 +1,23 @@
 import { exec } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { promisify } from 'node:util';
 
 const execAsync = promisify(exec);
 const CONFIG_PATH = '.opencode/opencode.json';
 
+export interface InitOptions {
+  requireVerification?: boolean;
+  blockedCommands?: string[];
+  skipPrompts?: boolean;
+}
+
 export interface InitResult {
   success: boolean;
   openspecAvailable: boolean;
   beadsAvailable: boolean;
   configCreated: boolean;
+  options: InitOptions;
 }
 
 async function isCommandAvailable(command: string): Promise<boolean> {
@@ -22,14 +29,35 @@ async function isCommandAvailable(command: string): Promise<boolean> {
   }
 }
 
-async function createConfig(): Promise<void> {
+function prompt(question: string): Promise<string> {
+  return new Promise((resolve) => {
+    process.stdout.write(question + ': ');
+    process.stdin.once('data', (data) => {
+      resolve(data.toString().trim());
+    });
+  });
+}
+
+async function createConfig(options: InitOptions): Promise<void> {
+  const existingConfig = await loadExistingConfig();
+  
+  const existingPlugins = Array.isArray(existingConfig.plugins) 
+    ? existingConfig.plugins as string[]
+    : [];
+  
   const config = {
-    name: 'ospb-workflow-plugin',
-    plugins: ['@ospb/plugin-core'],
+    ...existingConfig,
+    $schema: 'https://opencode.ai/schema.json',
+    plugins: ['@ospb/plugin-core', ...existingPlugins],
     settings: {
+      ...(existingConfig.settings || {}),
       workflowGuard: {
         enabled: true,
-        requireVerification: true,
+        requireVerification: options.requireVerification ?? true,
+        blockedCommands: options.blockedCommands ?? [
+          'git push --force',
+          'rm -rf /',
+        ],
       },
     },
   };
@@ -38,7 +66,47 @@ async function createConfig(): Promise<void> {
   await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
 }
 
-export async function initCommand(_args: string[]): Promise<InitResult> {
+interface ExistingConfig {
+  plugins?: string[];
+  settings?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+async function loadExistingConfig(): Promise<ExistingConfig> {
+  try {
+    const content = await readFile(CONFIG_PATH, 'utf-8');
+    return JSON.parse(content) as ExistingConfig;
+  } catch {
+    return {};
+  }
+}
+
+async function runInteractiveWizard(): Promise<InitOptions> {
+  console.log('\n📋 Configuration Wizard');
+  console.log('----------------------');
+  
+  const requireVerification = await prompt(
+    'Require task verification before claiming new tasks? (y/N)'
+  );
+  
+  const requireVerificationBool = ['y', 'Y', 'yes', 'Yes'].includes(requireVerification);
+  
+  const blockedInput = await prompt(
+    'Additional blocked commands (comma-separated, Enter for defaults)'
+  );
+  
+  const blockedCommands = blockedInput
+    ? blockedInput.split(',').map(s => s.trim()).filter(Boolean)
+    : ['git push --force', 'rm -rf /'];
+  
+  return {
+    requireVerification: requireVerificationBool,
+    blockedCommands,
+    skipPrompts: false,
+  };
+}
+
+export async function initCommand(args: string[]): Promise<InitResult> {
   const [openspecAvailable, beadsAvailable] = await Promise.all([
     isCommandAvailable('openspec'),
     isCommandAvailable('bd'),
@@ -47,14 +115,37 @@ export async function initCommand(_args: string[]): Promise<InitResult> {
   console.log('🔍 Checking tools...');
   console.log(`  openspec: ${openspecAvailable ? '✅' : '❌'}`);
   console.log(`  beads: ${beadsAvailable ? '✅' : '❌'}`);
+  
+  if (!openspecAvailable || !beadsAvailable) {
+    console.log('\n⚠️  Warning: Some required tools are not available.');
+    console.log('  Please install them to enable full workflow functionality.');
+    console.log('  - openspec: https://opencode.ai/docs/cli');
+    console.log('  - beads: Run `bd doctor` in OpenCode');
+  }
+
+  const skipPrompts = args.includes('--yes') || args.includes('-y');
+  
+  let options: InitOptions;
+  if (skipPrompts) {
+    options = { requireVerification: true, blockedCommands: ['git push --force', 'rm -rf /'] };
+    console.log('\n⚡ Running in non-interactive mode with defaults');
+  } else {
+    options = await runInteractiveWizard();
+  }
 
   console.log('\n📝 Creating configuration...');
-  await createConfig();
+  await createConfig(options);
+  
+  console.log(`\n✅ Configuration saved to ${CONFIG_PATH}`);
+  console.log('\n📖 Next steps:');
+  console.log('  1. Restart OpenCode to load the plugin');
+  console.log('  2. Run `ospb init --help` for more commands');
 
   return {
     success: true,
     openspecAvailable,
     beadsAvailable,
     configCreated: true,
+    options,
   };
 }
