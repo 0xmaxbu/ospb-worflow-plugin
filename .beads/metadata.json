@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "ospb_worflow_plugin",
+  "project_id": "99397fe4-de8e-4740-b62d-e6f899dc0735"
+}
