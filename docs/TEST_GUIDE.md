@@ -1,38 +1,55 @@
 # OSPB Workflow Plugin 测试指南
 
-## 环境准备
+## 本地测试方案（无需发布到 npm）
 
-### 1. 构建插件
+OpenCode 支持直接从本地文件加载插件，有两种方式：
 
-```bash
-cd /Volumes/SN350-1T\ 1/dev/ospb-worflow-plugin
-pnpm install
-pnpm run build
+### 方式 1: 自动发现（推荐）⭐
+
+```
+项目目录/
+├── .opencode/
+│   ├── plugins/           ← 插件放这里！
+│   │   └── ospb-workflow-plugin.ts
+│   └── opencode.json     ← 可选
+└── package.json
 ```
 
-### 2. 配置 OpenCode 加载插件
+OpenCode 会自动扫描 `.opencode/plugins/` 目录中的 `.ts` 文件并加载。
 
-在项目根目录创建或编辑 `.opencode/opencode.json`:
+### 方式 2: file:// 显式引用
 
 ```json
 {
   "plugins": [
-    "@ospb/plugin-core"
-  ],
-  "settings": {
-    "workflowGuard": {
-      "enabled": true,
-      "requireVerification": true,
-      "blockedCommands": [
-        "git push --force",
-        "rm -rf /"
-      ]
-    }
-  }
+    "file:///absolute/path/to/ospb-workflow-plugin.ts"
+  ]
 }
 ```
 
-**注意**: 实际使用时，需要将 `@ospb/plugin-core` 发布到 npm，或使用本地路径引用。
+---
+
+## 环境准备
+
+### 1. 复制插件文件到测试项目
+
+```bash
+# 假设你的测试项目在 ~/test-project
+cp .opencode/plugins/ospb-workflow-plugin.ts ~/test-project/.opencode/plugins/
+```
+
+### 2. 确保依赖已安装
+
+OpenCode 会自动在 `.opencode/` 目录运行 `bun install`，确保 `@opencode-ai/plugin` 可用。
+
+### 3. 启动 OpenCode
+
+```bash
+cd ~/test-project
+opencode
+```
+
+插件应该自动加载，无报错即可。
 
 ---
 
@@ -235,9 +252,9 @@ node packages/plugin-cli/dist/index.js init --yes
 ## 手动测试清单
 
 ### 测试前检查
-- [ ] `pnpm run build` 成功
+- [ ] 插件文件已复制到 `.opencode/plugins/`
 - [ ] OpenCode 可以启动
-- [ ] `.opencode/opencode.json` 配置正确
+- [ ] 无插件加载错误
 
 ### 功能测试
 
@@ -262,20 +279,21 @@ node packages/plugin-cli/dist/index.js init --yes
 
 ### Q: 插件未加载
 ```
-检查 .opencode/opencode.json 是否正确配置 plugins 字段
-确保插件已正确构建 (dist/ 目录存在)
+检查 .opencode/plugins/ 目录是否存在
+检查插件文件名是否以 .ts 或 .js 结尾
+查看 OpenCode 启动日志是否有错误
 ```
 
 ### Q: Hook 未生效
 ```
 检查 OpenCode 版本是否支持对应 hook
-某些 hook 可能是实验性功能，需要开启 experimental 标志
+某些 hook 可能是实验性功能 (experimental.*)
 ```
 
 ### Q: 命令拦截无效
 ```
-检查 workflowGuard.enabled 设置为 true
-确认在 blockedCommands 中添加了对应命令
+检查插件代码中的 PROHIBITED_PATTERNS 数组
+确认正则表达式正确匹配你的命令
 ```
 
 ---
