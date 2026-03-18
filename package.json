@@ -1,0 +1,24 @@
+{
+  "name": "ospb-workflow-plugin",
+  "version": "0.1.0-alpha",
+  "private": true,
+  "description": "OpenCode plugin for workflow validation and enforcement",
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean",
+    "build:all": "turbo run build --force",
+    "publish": "turbo run publish"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}
