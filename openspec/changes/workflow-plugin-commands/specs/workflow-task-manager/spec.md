@@ -58,3 +58,40 @@
 #### Scenario: 就绪任务选择
 - **WHEN** `bd ready` 返回多个任务时
 - **THEN** 按优先级（数值升序）和 ID（字母序升序）选择
+
+### Requirement: 任务命名规范
+bd 任务 SHALL 遵循统一的命名规范，以便于校验和后续转化。
+
+> **注意**: `bd create` 的 `-t` 标记必须为以下之一：`chore`、`task`、`feature`、`bug`、`epic`。出现其他类型标记为违规。
+
+#### Scenario: 测试任务
+- **WHEN** 创建测试类任务时
+- **THEN** 标题以 `Test: ` 开头
+- **EXAMPLE**: `Test: validate user authentication`
+
+#### Scenario: 实现任务
+- **WHEN** 创建实现类任务时
+- **THEN** 标题以 `Impl: ` 开头
+- **EXAMPLE**: `Impl: implement user login endpoint`
+
+#### Scenario: 准备任务
+- **WHEN** 创建准备/设置类任务时
+- **THEN** 标题以 `Setup - ` 开头
+- **EXAMPLE**: `Setup - configure test environment`
+
+#### Scenario: 修复任务
+- **WHEN** 创建修复类任务时
+- **THEN** 标题以 `Fix: ` 开头
+- **EXAMPLE**: `Fix: resolve session timeout issue`
+
+#### Scenario: 验证任务
+- **WHEN** 创建验证类任务时
+- **THEN** 标题以 `Valid: ` 开头，用于标注"验证 Spec 设计/目标"的工作项
+- **EXAMPLE**: `Valid: verify login flow matches spec`
+- **说明**: 验证任务与测试任务是不同的核查活动，验证任务检查 Spec 符合性，测试任务检查代码正确性
+
+#### Scenario: 任务类型强制
+- **WHEN** 执行 `bd create` 时
+- **THEN** `-t` 参数必须为 `chore`、`task`、`feature`、`bug`、`epic` 之一
+- **WHEN** 参数为其他值时
+- **THEN** 系统返回错误并拒绝创建任务

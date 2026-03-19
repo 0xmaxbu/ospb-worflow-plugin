@@ -59,23 +59,18 @@
     5. 通过 `$.bash('bd create ...')` 创建任务
     6. 通过 `$.bash('bd dep add ...')` 建立依赖关系（由 Planner Agent 确定）
     7. 生成并同步 `.workflow/bd.md` 任务依赖关系图
-  - **职责说明**: 
-    - **Planner Agent** (1.4): 确定任务依赖关系
-    - **workflow-task Tool** (1.5): 仅解析并执行 bd 命令，不分析依赖
-  - **依赖关系模板** (`.workflow/bd.md`):
-    ```yaml
-    tasks:
-      - id: task-1
-        title: "描述"
-        spec-ref: "spec.md#requirement-name"  # 追溯来源
-      - id: task-2
-        title: "描述"
-        spec-task-ref: "spec.md#requirement-name"  # 小任务
-        blocked-by: [task-1, validate-task-1]
-    ```
+  - **bd 任务命名规范**:
+    - 测试任务: `Test: <描述>`
+    - 实现任务: `Impl: <描述>`
+    - 准备任务: `Setup - <描述>`
+    - 修复任务: `Fix: <描述>`
+    - 验证任务: `Valid: <描述>`
+  - **任务类型 (-t) 强制**:
+    - 必须为: `chore`, `task`, `feature`, `bug`, `epic`
+    - 其他值必须拒绝
   - **Spec-ref**: 
     - `workflow-plugin-core/spec.md` - "workflow-task 工具"
-    - `workflow-task-manager/spec.md` - 任务与依赖管理
+    - `workflow-task-manager/spec.md` - 任务命名规范
 
 - [ ] 1.6 实现 `workflow-start` Tool
   - **输入**: 无
