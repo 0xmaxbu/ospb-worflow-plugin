@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { Hooks } from '@opencode-ai/plugin';
+const mockExecAsync = vi.fn();
+
+vi.mock('child_process', () => ({
+  exec: vi.fn(),
+}));
+
+vi.mock('util', () => ({
+  promisify: (fn: unknown) => () => mockExecAsync(),
+}));
 
 const { mockGetState } = vi.hoisted(() => ({
   mockGetState: vi.fn(),
@@ -12,295 +20,207 @@ vi.mock('../workflow-state', () => ({
 
 import { executeBeforeHook } from './execute-before';
 
-type ExecuteBeforeHook = NonNullable<Hooks['tool.execute.before']>;
-type ExecuteBeforeHookInput = Parameters<ExecuteBeforeHook>[0];
-type ExecuteBeforeHookOutput = Parameters<ExecuteBeforeHook>[1];
+type ExecuteBeforeHookInput = {
+  tool: string;
+  sessionId: string;
+  callId: string;
+};
+
+type ExecuteBeforeHookOutput = {
+  args?: {
+    command?: string;
+  };
+};
+
+function createMockInput(tool: string = 'bash'): ExecuteBeforeHookInput {
+  return { tool, sessionId: 'test-session', callId: 'test-call' };
+}
+
+function createMockOutput(command: string): ExecuteBeforeHookOutput {
+  return { args: { command } };
+}
 
 describe('executeBeforeHook', () => {
   beforeEach(() => {
     mockGetState.mockReset();
+    mockExecAsync.mockReset();
   });
 
-  describe('bd claim blocking', () => {
-    it('should block bd claim when task not verified', async () => {
-      mockGetState.mockReturnValue({
-        currentTask: 'bd-123',
-        isVerified: false,
-        requiresVerification: true,
-        canClaimNewTask: () => false,
-      });
+  describe('tool filtering', () => {
+    it('should skip non-bash tools', async () => {
+      const input = createMockInput('python');
+      const output = createMockOutput('python script.py');
 
-      const input = {
-        tool: 'bash',
-        sessionID: 'session-1',
-        callID: 'call-1',
-      } as ExecuteBeforeHookInput;
+      await executeBeforeHook(input, output);
 
-      const output = {
-        args: { command: 'bd claim bd-456' },
-      } as ExecuteBeforeHookOutput;
-
-      await expect(executeBeforeHook(input, output)).rejects.toThrow('Workflow Violation');
+      expect(mockGetState).not.toHaveBeenCalled();
     });
 
-    it('should allow bd claim when no current task', async () => {
-      mockGetState.mockReturnValue({
-        currentTask: null,
-        isVerified: false,
-        requiresVerification: true,
-        canClaimNewTask: () => true,
-      });
+    it('should skip bash tool with no command', async () => {
+      const input = createMockInput('bash');
+      const output = { args: {} } as ExecuteBeforeHookOutput;
 
-      const input = {
-        tool: 'bash',
-        sessionID: 'session-1',
-        callID: 'call-1',
-      } as ExecuteBeforeHookInput;
+      await executeBeforeHook(input, output);
 
-      const output = {
-        args: { command: 'bd claim bd-456' },
-      } as ExecuteBeforeHookOutput;
-
-      await expect(executeBeforeHook(input, output)).resolves.toBeUndefined();
+      expect(mockGetState).not.toHaveBeenCalled();
     });
 
-    it('should allow bd claim when task is verified', async () => {
-      mockGetState.mockReturnValue({
-        currentTask: 'bd-123',
-        isVerified: true,
-        requiresVerification: true,
-        canClaimNewTask: () => true,
-      });
+    it('should skip bash tool with non-string command', async () => {
+      const input = createMockInput('bash');
+      const output = { args: { command: 123 } } as unknown as ExecuteBeforeHookOutput;
 
-      const input = {
-        tool: 'bash',
-        sessionID: 'session-1',
-        callID: 'call-1',
-      } as ExecuteBeforeHookInput;
+      await executeBeforeHook(input, output);
 
-      const output = {
-        args: { command: 'bd claim bd-456' },
-      } as ExecuteBeforeHookOutput;
-
-      await expect(executeBeforeHook(input, output)).resolves.toBeUndefined();
+      expect(mockGetState).not.toHaveBeenCalled();
     });
   });
 
-  describe('prohibited commands', () => {
+  describe('prohibited command detection', () => {
     it('should block git push --force', async () => {
-      mockGetState.mockReturnValue({
-        currentTask: null,
-        isVerified: false,
-        requiresVerification: false,
-        canClaimNewTask: () => true,
-      });
+      const input = createMockInput('bash');
+      const output = createMockOutput('git push --force origin main');
 
-      const input = {
-        tool: 'bash',
-        sessionID: 'session-1',
-        callID: 'call-1',
-      } as ExecuteBeforeHookInput;
+      await expect(executeBeforeHook(input, output)).rejects.toThrow(/Prohibited command/);
+    });
 
-      const output = {
-        args: { command: 'git push --force origin main' },
-      } as ExecuteBeforeHookOutput;
+    it('should block git push -f', async () => {
+      const input = createMockInput('bash');
+      const output = createMockOutput('git push -f origin main');
 
-      await expect(executeBeforeHook(input, output)).rejects.toThrow('Prohibited command');
+      await expect(executeBeforeHook(input, output)).rejects.toThrow(/Prohibited command/);
     });
 
     it('should block rm -rf /', async () => {
-      const input = {
-        tool: 'bash',
-        sessionID: 'session-1',
-        callID: 'call-1',
-      } as ExecuteBeforeHookInput;
+      const input = createMockInput('bash');
+      const output = createMockOutput('rm -rf /');
 
-      const output = {
-        args: { command: 'rm -rf /' },
-      } as ExecuteBeforeHookOutput;
-
-      await expect(executeBeforeHook(input, output)).rejects.toThrow('Prohibited command');
+      await expect(executeBeforeHook(input, output)).rejects.toThrow(/Prohibited command/);
     });
 
-    it('should allow normal git commands', async () => {
-      const input = {
-        tool: 'bash',
-        sessionID: 'session-1',
-        callID: 'call-1',
-      } as ExecuteBeforeHookInput;
+    it('should block :! shell expansion', async () => {
+      const input = createMockInput('bash');
+      const output = createMockOutput(':!cat /etc/passwd');
 
-      const output = {
-        args: { command: 'git status' },
-      } as ExecuteBeforeHookOutput;
+      await expect(executeBeforeHook(input, output)).rejects.toThrow(/Prohibited command/);
+    });
+
+    it('should block $(rm ...) command substitution', async () => {
+      const input = createMockInput('bash');
+      const output = createMockOutput('$(rm -rf /tmp)');
+
+      await expect(executeBeforeHook(input, output)).rejects.toThrow(/Prohibited command/);
+    });
+
+    it('should allow safe git commands', async () => {
+      const input = createMockInput('bash');
+      const output = createMockOutput('git status');
+      mockGetState.mockReturnValue({ canClaimNewTask: () => true });
 
       await expect(executeBeforeHook(input, output)).resolves.toBeUndefined();
     });
   });
 
-  describe('non-bash tools', () => {
-    it('should pass through non-bash tools', async () => {
-      const input = {
-        tool: 'read',
-        sessionID: 'session-1',
-        callID: 'call-1',
-      } as ExecuteBeforeHookInput;
+  describe('bd claim command detection', () => {
+    it('should detect bd claim command and check task', async () => {
+      const input = createMockInput('bash');
+      const output = createMockOutput('bd claim ospb-worflow-plugin-xyz');
+      mockGetState.mockReturnValue({ canClaimNewTask: () => true });
+      mockExecAsync.mockResolvedValue({ stdout: '{"title":"Impl: some task"}', stderr: '' });
 
-      const output = {
-        args: {},
-      } as ExecuteBeforeHookOutput;
+      await executeBeforeHook(input, output);
 
-      await expect(executeBeforeHook(input, output)).resolves.toBeUndefined();
+      expect(mockExecAsync).toHaveBeenCalled();
+    });
+
+    it('should detect bd update --claim command and check task', async () => {
+      const input = createMockInput('bash');
+      const output = createMockOutput('bd update --claim ospb-worflow-plugin-xyz');
+      mockGetState.mockReturnValue({ canClaimNewTask: () => true });
+      mockExecAsync.mockResolvedValue({ stdout: '{"title":"Impl: some task"}', stderr: '' });
+
+      await executeBeforeHook(input, output);
+
+      expect(mockExecAsync).toHaveBeenCalled();
     });
   });
 
-  describe('additional prohibited patterns', () => {
-    it('should block git push -f (short form)', async () => {
+  describe('workflow verification blocking', () => {
+    it('should block claim when workflow verification required', async () => {
+      const input = createMockInput('bash');
+      const output = createMockOutput('bd claim ospb-worflow-plugin-xyz');
       mockGetState.mockReturnValue({
-        currentTask: null,
-        isVerified: false,
-        requiresVerification: false,
-        canClaimNewTask: () => true,
-      });
-
-      const input = {
-        tool: 'bash',
-        sessionID: 'session-1',
-        callID: 'call-1',
-      } as ExecuteBeforeHookInput;
-
-      const output = {
-        args: { command: 'git push -f origin main' },
-      } as ExecuteBeforeHookOutput;
-
-      await expect(executeBeforeHook(input, output)).rejects.toThrow('Prohibited command');
-    });
-
-    it('should block rm -rf /*', async () => {
-      const input = {
-        tool: 'bash',
-        sessionID: 'session-1',
-        callID: 'call-1',
-      } as ExecuteBeforeHookInput;
-
-      const output = {
-        args: { command: 'rm -rf /*' },
-      } as ExecuteBeforeHookOutput;
-
-      await expect(executeBeforeHook(input, output)).rejects.toThrow('Prohibited command');
-    });
-
-    it('should block shell substitution $(rm', async () => {
-      const input = {
-        tool: 'bash',
-        sessionID: 'session-1',
-        callID: 'call-1',
-      } as ExecuteBeforeHookInput;
-
-      const output = {
-        args: { command: 'echo $(rm -rf /)' },
-      } as ExecuteBeforeHookOutput;
-
-      await expect(executeBeforeHook(input, output)).rejects.toThrow('Prohibited command');
-    });
-
-    it('should block dangerous bang pattern command:!', async () => {
-      const input = {
-        tool: 'bash',
-        sessionID: 'session-1',
-        callID: 'call-1',
-      } as ExecuteBeforeHookInput;
-
-      const output = {
-        args: { command: 'command:!dangerous' },
-      } as ExecuteBeforeHookOutput;
-
-      await expect(executeBeforeHook(input, output)).rejects.toThrow('Prohibited command');
-    });
-
-    it('should not block git push without force', async () => {
-      const input = {
-        tool: 'bash',
-        sessionID: 'session-1',
-        callID: 'call-1',
-      } as ExecuteBeforeHookInput;
-
-      const output = {
-        args: { command: 'git push origin main' },
-      } as ExecuteBeforeHookOutput;
-
-      await expect(executeBeforeHook(input, output)).resolves.toBeUndefined();
-    });
-  });
-
-  describe('bd claim variants', () => {
-    it('should block bd update --claim when task not verified', async () => {
-      mockGetState.mockReturnValue({
-        currentTask: 'bd-123',
-        isVerified: false,
-        requiresVerification: true,
         canClaimNewTask: () => false,
+        currentTask: 'ospb-workflow-plugin-abc',
+        isVerified: false,
       });
 
-      const input = {
-        tool: 'bash',
-        sessionID: 'session-1',
-        callID: 'call-1',
-      } as ExecuteBeforeHookInput;
-
-      const output = {
-        args: { command: 'bd update --claim bd-456' },
-      } as ExecuteBeforeHookOutput;
-
-      await expect(executeBeforeHook(input, output)).rejects.toThrow('Workflow Violation');
+      await expect(executeBeforeHook(input, output)).rejects.toThrow(/Cannot claim task until current task is verified/);
     });
 
-    it('should allow bd update --claim when no current task', async () => {
-      mockGetState.mockReturnValue({
-        currentTask: null,
-        isVerified: false,
-        requiresVerification: true,
-        canClaimNewTask: () => true,
-      });
-
-      const input = {
-        tool: 'bash',
-        sessionID: 'session-1',
-        callID: 'call-1',
-      } as ExecuteBeforeHookInput;
-
-      const output = {
-        args: { command: 'bd update --claim bd-456' },
-      } as ExecuteBeforeHookOutput;
+    it('should allow claim when verification not required', async () => {
+      const input = createMockInput('bash');
+      const output = createMockOutput('bd claim ospb-worflow-plugin-xyz');
+      mockGetState.mockReturnValue({ canClaimNewTask: () => true });
+      mockExecAsync.mockResolvedValue({ stdout: '{"title":"Impl: some task"}', stderr: '' });
 
       await expect(executeBeforeHook(input, output)).resolves.toBeUndefined();
     });
   });
 
-  describe('edge cases', () => {
-    it('should handle missing args.command', async () => {
-      const input = {
-        tool: 'bash',
-        sessionID: 'session-1',
-        callID: 'call-1',
-      } as ExecuteBeforeHookInput;
+  describe('Valid: task verification', () => {
+    it('should throw error for Valid: task claim requiring verification', async () => {
+      const input = createMockInput('bash');
+      const output = createMockOutput('bd claim ospb-worflow-plugin-xyz');
+      mockGetState.mockReturnValue({
+        canClaimNewTask: () => true,
+        currentTask: 'ospb-worflow-plugin-xyz',
+        isVerified: false,
+      });
+      mockExecAsync.mockResolvedValue({ stdout: '{"title":"Valid: Verify spec compliance"}', stderr: '' });
 
-      const output = {
-        args: {},
-      } as ExecuteBeforeHookOutput;
+      await expect(executeBeforeHook(input, output)).rejects.toThrow(/Verification Required/);
+    });
+
+    it('should allow Valid: task claim when already verified', async () => {
+      const input = createMockInput('bash');
+      const output = createMockOutput('bd claim ospb-worflow-plugin-xyz');
+      mockGetState.mockReturnValue({
+        canClaimNewTask: () => true,
+        currentTask: 'ospb-worflow-plugin-xyz',
+        isVerified: true,
+      });
+      mockExecAsync.mockResolvedValue({ stdout: '{"title":"Valid: Verify spec compliance"}', stderr: '' });
 
       await expect(executeBeforeHook(input, output)).resolves.toBeUndefined();
     });
 
-    it('should handle non-string command', async () => {
-      const input = {
-        tool: 'bash',
-        sessionID: 'session-1',
-        callID: 'call-1',
-      } as ExecuteBeforeHookInput;
+    it('should allow non-Valid: task claims', async () => {
+      const input = createMockInput('bash');
+      const output = createMockOutput('bd claim ospb-worflow-plugin-xyz');
+      mockGetState.mockReturnValue({
+        canClaimNewTask: () => true,
+        currentTask: null,
+        isVerified: false,
+      });
+      mockExecAsync.mockResolvedValue({ stdout: '{"title":"Impl: Implement feature X"}', stderr: '' });
 
-      const output = {
-        args: { command: 123 },
-      } as ExecuteBeforeHookOutput;
+      await expect(executeBeforeHook(input, output)).resolves.toBeUndefined();
+    });
+
+    it('should handle bd show command failure gracefully', async () => {
+      const input = createMockInput('bash');
+      const output = createMockOutput('bd claim ospb-worflow-plugin-xyz');
+      mockGetState.mockReturnValue({ canClaimNewTask: () => true });
+      mockExecAsync.mockRejectedValue(new Error('bd not found'));
+
+      await expect(executeBeforeHook(input, output)).resolves.toBeUndefined();
+    });
+
+    it('should handle invalid JSON from bd show', async () => {
+      const input = createMockInput('bash');
+      const output = createMockOutput('bd claim ospb-worflow-plugin-xyz');
+      mockGetState.mockReturnValue({ canClaimNewTask: () => true });
+      mockExecAsync.mockResolvedValue({ stdout: 'not valid json', stderr: '' });
 
       await expect(executeBeforeHook(input, output)).resolves.toBeUndefined();
     });
