@@ -193,17 +193,20 @@ User can review the generated documents.
 
 Convert spec documents into more detailed plans:
 - If requirement is small and spec is detailed enough, plan = spec
+- **细化原则**: 步骤粒度达到可独立验证、可执行的程度（每个步骤产出明确、边界清晰）
 - Plan steps must reference their Spec source
   - `Spec-task-ref`: Marks completion of a small Spec Task (record the ref)
   - `Spec-ref`: Marks completion of a larger task phase (record the ref)
 - Save plan to `.workflow/plans/<spec-change-name>.md`
 
-After generating the complete plan, automatically invoke the **plan reviewer Agent** to verify:
-1. Plan符合Spec设计
-2. Plan完整可落地
-3. Plan没有设计错误/缺失会导致开发中断
-
-If issues found, use question tool to communicate with user and refine.
+**Plan Review (自动触发):**
+1. 生成完整 plan 后，通过 hook 调起审查方法（plan reviewer Agent）
+2. 审查维度：
+   - Plan 是否符合 Spec 设计
+   - Plan 是否完整可落地
+   - Plan 是否有设计错误/缺失会导致开发中断
+3. 若有问题，通过 question tool 与用户沟通并修改
+4. 审查方法会随使用情况持续调整优化
 
 ---
 
@@ -216,7 +219,7 @@ Read the plan and create bd tasks via `bd create`.
 **Dependency Management:**
 - Use `bd dep add <blocked-task-id> <blocking-task-id>` to manage dependencies
 - When plan step has `Spec-task-ref`: create a **Validate** task
-  - Validate task is blocked by its corresponding产出 task
+  - Validate task is blocked by its corresponding产出任务
   - Validates that the phase output matches the Spec design
 - When plan step has `Spec-ref`: also create a larger **Validate** task
   - Validates all output since the last Spec-ref/Validate task conforms to Spec Goal
@@ -228,8 +231,9 @@ Read the plan and create bd tasks via `bd create`.
   - Test task blocks implementation task
 
 **Workflow Metadata:**
-- Maintain a markdown copy in `.workflow/bd.md`
+- Plugin maintains task and dependency relationships in `.workflow/bd.md`
 - Load tasks into memory only when starting execution
+- All task/dependency changes sync to bd tracking system
 
 ---
 
@@ -237,14 +241,25 @@ Read the plan and create bd tasks via `bd create`.
 
 Read and execute `bd ready` tasks (future: support parallel execution).
 
-**Validation Failure Handling:**
+**Task Claiming Restriction:**
+If Agent tries to claim a different `bd ready` task while in the middle of a workflow, the plugin blocks this and returns an error.
+
+**Validation Task Handling:**
+When Agent claims a Validate task:
+1. Plugin **pauses Agent execution** immediately
+2. Plugin invokes **codeReviewerAgent** to perform verification
+3. Verification checks:
+   - Phase output matches Spec design (for Spec-task-ref Validate tasks)
+   - All output since last Spec-ref conforms to Spec Goal (for larger Validate tasks)
+4. After verification completes:
+   - **Pass**: Agent proceeds to next task
+   - **Fail**: Plugin automatically **reopens all tasks** between the last Spec-task-ref/Spec-ref and the failed validation, then informs Agent of the failure reason and returns to previous task to re-execute sequentially
+
+**Failure Recovery:**
 When a Validate task fails:
 1. Plugin automatically **reopens all tasks** between the last Spec-task-ref/Spec-ref and the failed validation
 2. Requires Agent to return to the previous task and execute sequentially
 3. Informs Agent of the validation failure reason
-
-**Task Claiming Restriction:**
-If Agent tries to claim a different `bd ready` task while in the middle of a workflow, the plugin blocks this and returns an error.
 
 ---
 
