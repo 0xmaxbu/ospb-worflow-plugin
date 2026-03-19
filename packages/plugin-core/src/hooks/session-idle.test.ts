@@ -68,4 +68,55 @@ describe('sessionIdleHook', () => {
 
     expect(result).toBeNull();
   });
+
+  it('should return null when requiresVerification is false', async () => {
+    mockGetState.mockReturnValue({
+      currentTask: 'bd-123',
+      isVerified: false,
+      requiresVerification: false,
+    });
+
+    const input = {
+      sessionId: 'session-123',
+    } as SessionIdleHookInput;
+
+    const result = await sessionIdleHook(input);
+
+    expect(result).toBeNull();
+  });
+
+  it('should return reminder with correct format containing task ID', async () => {
+    mockGetState.mockReturnValue({
+      currentTask: 'ospb-workflow-plugin-xyz',
+      isVerified: false,
+      requiresVerification: true,
+    });
+
+    const input = {
+      sessionId: 'session-456',
+    } as SessionIdleHookInput;
+
+    const result = await sessionIdleHook(input);
+
+    expect(result).not.toBeNull();
+    expect(result?.role).toBe('user');
+    expect(result?.content).toContain('ospb-workflow-plugin-xyz');
+    expect(result?.content).toContain('bd show');
+  });
+
+  it('should handle empty currentTask string', async () => {
+    mockGetState.mockReturnValue({
+      currentTask: '',
+      isVerified: false,
+      requiresVerification: true,
+    });
+
+    const input = {
+      sessionId: 'session-123',
+    } as SessionIdleHookInput;
+
+    const result = await sessionIdleHook(input);
+
+    expect(result).toBeNull();
+  });
 });
