@@ -148,3 +148,127 @@ For more details, see README.md and docs/QUICKSTART.md.
 - If push fails, resolve and retry until it succeeds
 
 <!-- END BEADS INTEGRATION -->
+
+---
+
+# OpenSpec Workflow Plugin - Core Commands
+
+This plugin provides a structured workflow for building OpenCode plugins using OpenSpec + bd (beads).
+
+## Command Reference
+
+### /init-workflow
+
+Initialize the workflow environment:
+1. Run `bd init --quiet`
+2. Run `openspec init --tools opencode`
+3. In `openspec/config.yaml` (create if not exists), set language to Chinese (`lang: zh`)
+
+---
+
+### /workflow-explore
+
+**Parameter:** User's requirement/idea
+
+Enter explore mode where the Agent:
+1. Analyzes and investigates the requirement
+2. Reads project state and communicates with user to clarify the requirement
+3. Maintains a markdown draft in `./workflow/drafts/` (English filename, words separated by hyphens, keep brief)
+
+---
+
+### /workflow-propose
+
+**Parameter:** Draft name (optional - if omitted, shows all drafts via question tool)
+
+Convert the draft to OpenSpec documents by calling the corresponding skill.
+
+User can review the generated documents.
+
+---
+
+### /workflow-plan
+
+**Parameter:** Spec change name (optional - if omitted, shows all spec changes via question tool)
+
+Convert spec documents into more detailed plans:
+- If requirement is small and spec is detailed enough, plan = spec
+- Plan steps must reference their Spec source
+  - `Spec-task-ref`: Marks completion of a small Spec Task (record the ref)
+  - `Spec-ref`: Marks completion of a larger task phase (record the ref)
+- Save plan to `.workflow/plans/<spec-change-name>.md`
+
+After generating the complete plan, automatically invoke the **plan reviewer Agent** to verify:
+1. Plan符合Spec设计
+2. Plan完整可落地
+3. Plan没有设计错误/缺失会导致开发中断
+
+If issues found, use question tool to communicate with user and refine.
+
+---
+
+### /workflow-task
+
+**Parameter:** Plan name (optional - if omitted, shows all plans via question tool)
+
+Read the plan and create bd tasks via `bd create`.
+
+**Dependency Management:**
+- Use `bd dep add <blocked-task-id> <blocking-task-id>` to manage dependencies
+- When plan step has `Spec-task-ref`: create a **Validate** task
+  - Validate task is blocked by its corresponding产出 task
+  - Validates that the phase output matches the Spec design
+- When plan step has `Spec-ref`: also create a larger **Validate** task
+  - Validates all output since the last Spec-ref/Validate task conforms to Spec Goal
+  - These validate tasks should be handled by a dedicated review agent
+
+**TDD Compliance:**
+- All 产出/implementation tasks must be blocked by their corresponding test tasks
+  - Write test first → then implement
+  - Test task blocks implementation task
+
+**Workflow Metadata:**
+- Maintain a markdown copy in `.workflow/bd.md`
+- Load tasks into memory only when starting execution
+
+---
+
+### /workflow-start
+
+Read and execute `bd ready` tasks (future: support parallel execution).
+
+**Validation Failure Handling:**
+When a Validate task fails:
+1. Plugin automatically **reopens all tasks** between the last Spec-task-ref/Spec-ref and the failed validation
+2. Requires Agent to return to the previous task and execute sequentially
+3. Informs Agent of the validation failure reason
+
+**Task Claiming Restriction:**
+If Agent tries to claim a different `bd ready` task while in the middle of a workflow, the plugin blocks this and returns an error.
+
+---
+
+## Workflow Diagram
+
+```
+/init-workflow
+      ↓
+/workflow-explore ←→ User (requirement discussion)
+      ↓
+/workflow-propose
+      ↓
+/workflow-plan (review by plan reviewer)
+      ↓
+/workflow-task (creates bd tasks with dependencies)
+      ↓
+/workflow-start (executes tasks, validates, recovers from failures)
+```
+
+## Key Principles
+
+1. **TDD Enforcement**: All implementation tasks must be blocked by their test tasks
+2. **Validation Gates**: Validate tasks ensure spec compliance before proceeding
+3. **Failure Recovery**: Automatically reopen and re-execute when validations fail
+4. **Single Task Focus**: Only one workflow task at a time, no parallel claiming during workflow
+
+<!-- END WORKFLOW PLUGIN -->
