@@ -6,6 +6,7 @@ import {
   sessionCompactingHook,
   sessionIdleHook,
 } from './hooks';
+import { workflowTools } from './workflow-tools';
 
 const registeredChatTransformHook =
   chatTransformHook as unknown as NonNullable<Hooks['experimental.chat.system.transform']>;
@@ -25,6 +26,7 @@ function createHooks(): RegisteredHooks {
     'experimental.chat.system.transform': registeredChatTransformHook,
     'session.idle': sessionIdleHook,
     'experimental.session.compacting': sessionCompactingHook,
+    tool: workflowTools as unknown as Hooks['tool'],
   };
 }
 
@@ -47,3 +49,4 @@ export default plugin;
 export * from './hooks';
 export * from './tool-check';
 export * from './workflow-state';
+export * from './workflow-tools';
