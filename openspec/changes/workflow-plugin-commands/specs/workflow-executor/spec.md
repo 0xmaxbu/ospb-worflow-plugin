@@ -4,37 +4,39 @@
 插件 SHALL 监听 Agent 的任务认领行为。
 
 #### Scenario: 正常任务认领
-- **WHEN** Agent 认领非验证任务时
+- **WHEN** Agent 执行 `bd update <id> --claim` 认领非验证任务时
 - **THEN** 允许执行
 
 #### Scenario: 验证任务认领
-- **WHEN** Agent 认领验证任务时
-- **THEN** 插件立即暂停 Agent 执行
+- **WHEN** Agent 认领 `Valid:` 开头的验证任务时
+- **THEN** 抛出错误，要求 Agent 必须先调用 `verify-code` tool
 
-### Requirement: codeReviewerAgent 验证
-系统 SHALL 在验证任务时调起 codeReviewerAgent。
+### Requirement: verify-code Tool 验证
+系统 SHALL 通过 `verify-code` Tool 执行验证。
+
+> **实现说明**: Issue #5894 确认 `tool.execute.before` 不拦截 subagent 工具调用，故采用 Tool 方案而非直接阻断+启动 subagent
 
 #### Scenario: 验证任务触发
-- **WHEN** Agent 认领验证任务
-- **THEN** 插件调用 codeReviewerAgent 进行验证
+- **WHEN** Agent 认领 `Valid:` 任务并调用 `verify-code` tool 时
+- **THEN** 解析任务 `--description` 中的 `Spec-ref`，读取对应 Spec 文档位置
 
 #### Scenario: 验证内容 - Spec-task-ref
-- **WHEN** 验证 Spec-task-ref 任务时
+- **WHEN** 验证 `Spec-task-ref` 任务时
 - **THEN** 检查对应阶段产出是否符合 Spec 设计
 
 #### Scenario: 验证内容 - Spec-ref
-- **WHEN** 验证 Spec-ref 任务时
-- **THEN** 检查上一次 Spec-ref 至今所有产出是否符合 Spec Goal
+- **WHEN** 验证 `Spec-ref` 任务时
+- **THEN** 检查上一次 `Spec-ref` 至今所有产出是否符合 Spec Goal
 
 ### Requirement: 验证结果处理
 系统 SHALL 根据验证结果执行不同流程。
 
 #### Scenario: 验证成功
-- **WHEN** codeReviewerAgent 验证通过时
-- **THEN** 通知 Agent 可以继续认领并执行其他任务
+- **WHEN** `verify-code` tool 返回通过时
+- **THEN** 标记任务为完成，通知 Agent 可以继续
 
 #### Scenario: 验证失败
-- **WHEN** codeReviewerAgent 验证失败时
+- **WHEN** `verify-code` tool 返回失败时
 - **THEN** 将失败原因告知 Agent，并执行失败恢复流程
 
 ### Requirement: 失败恢复流程
@@ -42,14 +44,14 @@
 
 #### Scenario: 任务 reopen
 - **WHEN** 验证失败时
-- **THEN** 插件自动 reopen 从上一次 Spec-task-ref/Spec-ref 到失败验证点之间的所有任务
+- **THEN** 插件执行 `$.bash('bd reopen <task-id>')` 重新打开从上一次 `Spec-task-ref/Spec-ref` 到失败验证点之间的所有任务
 
 #### Scenario: 顺序执行强制
 - **WHEN** 验证失败后
 - **THEN** Agent 必须按依赖顺序重新认领并执行被 reopen 的任务
 
 #### Scenario: 认领拦截
-- **WHEN** 验证失败后 Agent 尝试认领其他 `bd ready` 任务时
+- **WHEN** 验证链执行期间 Agent 尝试认领非 `Valid:` 任务时
 - **THEN** 插件拦截并返回错误
 
 ### Requirement: 验证链维护
@@ -57,7 +59,7 @@
 
 #### Scenario: 当前验证点跟踪
 - **WHEN** Agent 处于验证链中时
-- **THEN** 记录当前验证点和上一个验证点
+- **THEN** 记录当前 `Valid:` 任务 ID 和上一个成功验证点
 
 #### Scenario: 验证上下文传递
 - **WHEN** 重新执行被 reopen 的任务时

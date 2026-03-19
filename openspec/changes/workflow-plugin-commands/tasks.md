@@ -53,12 +53,15 @@
   - **输出**: 创建 bd 任务 + 生成 `.workflow/bd.md` 任务依赖图
   - **行为规范**:
     1. 读取计划文件中 **Planner Agent 已确定的依赖关系**
-    2. **解析 Spec-task-ref 标注**: 创建 Validate 任务 (blocked by 产出任务)
-    3. **解析 Spec-ref 标注**: 创建阶段级 Validate 任务 (blocked by 该阶段所有产出)
+    2. **解析 Spec-task-ref 标注**: 创建 `Valid:` 任务 (blocked by 产出任务)
+    3. **解析 Spec-ref 标注**: 创建阶段级 `Valid:` 任务 (blocked by 该阶段所有产出)
     4. **TDD 强制**: 实现任务的测试任务作为 blocker
-    5. 通过 `$.bash('bd create ...')` 创建任务
+    5. 通过 `$.bash('bd create "Impl: <描述>" --description "Spec-ref: spec.md#..." -t feature -p <n>')` 创建任务
     6. 通过 `$.bash('bd dep add ...')` 建立依赖关系（由 Planner Agent 确定）
     7. 生成并同步 `.workflow/bd.md` 任务依赖关系图
+  - **bd create 命令格式**:
+    - 标题: `Impl: <描述>`, `Test: <描述>`, `Valid: <描述>` 等
+    - `--description`: 包含 `Spec-ref: spec.md#requirement-name` 用于验证时追溯
   - **bd 任务命名规范**:
     - 测试任务: `Test: <描述>`
     - 实现任务: `Impl: <描述>`
@@ -74,14 +77,13 @@
 
 - [ ] 1.6 实现 `workflow-start` Tool
   - **输入**: 无
-  - **输出**: 执行 bd ready 任务
+  - **输出**: 触发工作流执行模式
   - **行为规范**:
-    1. 读取 `bd ready --json` 获取就绪任务
-    2. 按依赖顺序执行
-    3. **认领监听**: 拦截 `bd claim/update --claim`，暂停 Agent
-    4. **验证流程**: 认领验证任务时调用 codeReviewerAgent
+    1. 提示 Agent 执行 `bd ready` 查看就绪任务
+    2. Agent 通过 `bd update <id> --claim` 认领任务
+    3. **认领监听**: `tool.execute.before` 拦截认领命令
+    4. **Valid 任务触发**: 认领 `Valid:` 任务时，要求先调用 `verify-code` tool
     5. **失败恢复**: 验证失败则 reopen 从上一个验证点到失败点的所有任务
-    6. **认领拦截**: 验证链执行期间禁止切换到其他任务
   - **Spec-ref**: 
     - `workflow-plugin-core/spec.md` - "workflow-start 工具"
     - `workflow-executor/spec.md` - 验证与失败恢复
@@ -123,43 +125,54 @@
   - **Spec-ref**: `workflow-task-manager/spec.md`
 
 - [ ] 3.3 实现 TDD 测试阻塞机制
-  - **规则**: feature 类型任务的测试任务必须先完成
+  - **规则**: feature 类型任务的成功判断标准 = 关联的测试用例全部通过
+  - **阻塞关系**: feature 任务被 test 任务阻塞 (test 未通过，feature 不能 close)
   - **实现**: 创建 feature 任务时，自动创建对应的 test 任务作为 blocker
   - **Spec-ref**: `workflow-task-manager/spec.md` - "TDD 强制执行"
 
 - [ ] 3.4 实现验证任务生成逻辑
   - **规则**:
-    - `Spec-task-ref` 标注 → 创建 Validate 任务
-    - `Spec-ref` 标注 → 创建阶段级 Validate 任务
+    - `Spec-task-ref` 标注 → 创建 `Valid: <描述>` 任务，blocked by 产出任务
+    - `Spec-ref` 标注 → 创建阶段级 `Valid:` 任务，blocked by 该阶段所有产出任务
+  - **任务创建命令**: `bd create "Valid: <描述>" --description "Spec-ref: ..." -t task -p <priority>`
   - **Spec-ref**: `workflow-task-manager/spec.md` - "验证任务生成"
 
 ## 4. Executor 功能
 
 - [ ] 4.1 实现任务认领监听器
-  - **Hook**: `tool.execute.before` 拦截 `bd claim/update --claim`
-  - **行为**: 记录当前认领状态，触发验证流程
+  - **Hook**: `tool.execute.before` 拦截 `bd update --claim`
+  - **行为**: 
+    1. 检查认领的任务标题是否以 `Valid:` 开头
+    2. 如果是 Valid 任务，抛出错误要求 Agent 必须先调用 `verify-code` tool
+    3. 如果不是 Valid 任务，正常放行
   - **Spec-ref**: `workflow-executor/spec.md`
 
-- [ ] 4.2 实现 codeReviewerAgent 调用逻辑
-  - **调用方式**: 通过 SDK Client 启动 codeReviewerAgent
-  - **输入**: 任务上下文 + 对应的 spec 引用
-  - **输出**: 验证结果 (pass/fail + 原因)
+- [ ] 4.2 实现 verify-code Tool (替代 codeReviewerAgent 直接调用)
+  - **Tool 名称**: `verify-code`
+  - **触发条件**: Agent 认领 Valid 任务时必须调用
+  - **行为**:
+    1. 从 bd task 的 `--description` 中读取 `Spec-ref: ...`
+    2. 根据 ref 读取对应 Spec 文档位置
+    3. 启动 codeReviewerAgent 进行 code review
+    4. 返回验证结果 (pass/fail + 原因)
+  - **证据**: Issue #5894 确认 `tool.execute.before` 不拦截 subagent，故采用 Tool 方案
   - **Spec-ref**: `workflow-executor/spec.md`
 
 - [ ] 4.3 实现验证失败恢复流程
   - **流程**:
-    1. codeReviewerAgent 返回失败
+    1. `verify-code` tool 返回失败
     2. 定位上一个成功验证点到失败点的任务
-    3. 调用 `bd reopen <task-id>` 重新打开任务
+    3. 调用 `$.bash('bd reopen <task-id>')` 重新打开任务
     4. 将失败原因告知 Agent
   - **Spec-ref**: `workflow-executor/spec.md`
 
-- [ ] 4.4 实现任务认领拦截器
-  - **规则**: 验证链执行期间，Agent 只能认领验证链上的任务
+- [ ] 4.4 实现任务认领校验
+  - **规则**: 验证链执行期间，Agent 只能认领 Valid: 任务
   - **实现**: 
-    1. 维护验证链状态 (当前验证任务 + 已完成验证)
-    2. 拦截 `bd claim` 时检查目标任务是否在链上
-    3. 不在链上则抛出错误
+    1. 维护验证链状态 (当前 Valid 任务)
+    2. `tool.execute.before` 拦截 `bd update --claim`
+    3. 如果不是 Valid: 任务且在验证链中，抛出错误
+  - **说明**: `bd ready` 本身只返回就绪任务，无需额外限制
   - **Spec-ref**: `workflow-executor/spec.md`
 
 ## 5. 测试配置与执行

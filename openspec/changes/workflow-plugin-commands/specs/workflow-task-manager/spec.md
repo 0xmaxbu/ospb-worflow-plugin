@@ -95,3 +95,17 @@ bd 任务 SHALL 遵循统一的命名规范，以便于校验和后续转化。
 - **THEN** `-t` 参数必须为 `chore`、`task`、`feature`、`bug`、`epic` 之一
 - **WHEN** 参数为其他值时
 - **THEN** 系统返回错误并拒绝创建任务
+
+### Requirement: 任务描述字段
+bd 任务的 `--description` 字段 SHALL 包含 Spec 追溯信息。
+
+#### Scenario: 描述包含 Spec-ref
+- **WHEN** 创建任务时
+- **THEN** `--description` 必须包含 `Spec-ref: spec.md#requirement-name`
+- **EXAMPLE**: `--description "Spec-ref: workflow-plugin-core/spec.md#init-workflow-tool"`
+- **用途**: `verify-code` tool 读取此字段定位对应的 Spec 文档位置进行验证
+
+#### Scenario: 验证任务描述
+- **WHEN** 创建 `Valid:` 任务时
+- **THEN** `--description` 包含对应的 Spec-task-ref 或 Spec-ref
+- **EXAMPLE**: `--description "Spec-ref: workflow-plugin-core/spec.md#init-workflow-tool"`
