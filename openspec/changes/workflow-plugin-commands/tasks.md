@@ -30,12 +30,13 @@
   - **无参数行为** (插件直接实现):
     - 读取 `.workflow/drafts/` 下所有草案文件名
     - 通过 question tool 让用户选择
-  - **带参数行为** (指示 Agent):
-    - 指示 Agent 读取 `.workflow/drafts/<draft-name>.md`
-    - 启动 **ProposeAgent** (非 subAgent，直接与用户对话)
+    - **用户选择后自动进入带参数行为**
+  - **带参数行为** (插件直接调用工具):
+    - 调用读取工具获取 `.workflow/drafts/<draft-name>.md` 内容
+    - 将内容提供给 **ProposeAgent** (非 subAgent，直接与用户对话)
     - ProposeAgent 与用户沟通 OpenSpec 细节，直到用户满意
-    - 指示 Agent 生成 OpenSpec artifacts 到 `openspec/changes/<draft-name>/`
-  - **插件职责**: 编排工作流，指示 Agent 执行具体操作
+    - 调用写入工具生成 OpenSpec artifacts 到 `openspec/changes/<draft-name>/`
+  - **插件职责**: 直接调用工具，结果传递给对应 Agent
   - **名称贯穿**: 草案名称 → change 名称 → 计划名称 → bd 任务 (统一)
   - **Spec-ref**: `workflow-plugin-core/spec.md` - "workflow-propose 工具"
 
@@ -44,13 +45,16 @@
   - **无参数行为** (插件直接实现):
     - 读取 `openspec/changes/` 下所有 change 目录名
     - 通过 question tool 让用户选择
-  - **带参数行为** (指示 Agent):
-    - 指示 Agent 读取 `openspec/changes/<change-name>/` 下的 spec 文档
-    - **Planner Agent** 生成可执行计划，步骤粒度达到**可独立验证**程度
+    - **用户选择后自动进入带参数行为**
+  - **带参数行为** (插件直接调用工具):
+    - 调用读取工具获取 `openspec/changes/<change-name>/` 下的 spec 文档
+    - 将内容提供给 **Planner Agent**
+    - Planner Agent 生成可执行计划，步骤粒度达到**可独立验证**程度
     - **Planner Agent 同时确定任务依赖关系**，使用 DAG 结构
     - 每个步骤标注 `Spec-task-ref` (小任务) 或 `Spec-ref` (阶段)
+    - 调用写入工具生成 `.workflow/plans/<change-name>.md`
     - 计划生成后**自动触发** Plan Review (调用 plan reviewer Agent)
-  - **插件职责**: 编排工作流，指示 Agent 执行具体操作
+  - **插件职责**: 直接调用工具，结果传递给对应 Agent
   - **依赖关系确定**: 由同一 Planner Agent 在规划时确定，而非独立 Agent
     - **证据来源**: 
       - Anthropic Orchestrator-workers 模式: "central LLM dynamically breaks down tasks and delegates" (https://www.anthropic.com/research/building-effective-agents)
@@ -64,15 +68,16 @@
   - **无参数行为** (插件直接实现):
     - 读取 `.workflow/plans/` 下所有计划文件名
     - 通过 question tool 让用户选择
-  - **带参数行为** (指示 Agent):
-    - 指示 Agent 读取 `.workflow/plans/<plan-name>.md`
+    - **用户选择后自动进入带参数行为**
+  - **带参数行为** (插件直接调用工具):
+    - 调用读取工具获取 `.workflow/plans/<plan-name>.md` 内容
     - 解析 Spec-task-ref 标注，创建 `Valid:` 任务
     - 解析 Spec-ref 标注，创建阶段级 `Valid:` 任务
     - **TDD 强制**: 实现任务的测试任务作为 blocker
-    - 指示 Agent 通过 `$.bash('bd create ...')` 创建任务
-    - 指示 Agent 通过 `$.bash('bd dep add ...')` 建立依赖关系
+    - 调用 shell 工具执行 `$.bash('bd create ...')` 创建任务
+    - 调用 shell 工具执行 `$.bash('bd dep add ...')` 建立依赖关系
     - 生成并同步 `.workflow/bd.md` 任务依赖关系图
-  - **插件职责**: 编排工作流，指示 Agent 执行具体操作
+  - **插件职责**: 直接调用工具，结果传递给对应 Agent
   - **bd create 命令格式**:
     - 标题: `Impl: <描述>`, `Test: <描述>`, `Valid: <描述>` 等
     - `--description`: 包含 `Spec-ref: spec.md#requirement-name` 用于验证时追溯
