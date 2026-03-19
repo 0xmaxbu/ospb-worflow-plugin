@@ -1,4 +1,4 @@
-import type { Hooks, Plugin, PluginInput } from '@opencode-ai/plugin';
+import type { Hooks, Plugin } from '@opencode-ai/plugin';
 
 import {
   chatTransformHook,
@@ -15,11 +15,6 @@ type RegisteredHooks = Hooks & {
   'session.idle': typeof sessionIdleHook;
 };
 
-export type RegisteredPlugin = {
-  name: 'ospb-workflow-plugin';
-  hooks: RegisteredHooks;
-};
-
 function createHooks(): RegisteredHooks {
   return {
     'tool.execute.before': executeBeforeHook,
@@ -30,23 +25,6 @@ function createHooks(): RegisteredHooks {
   };
 }
 
-type PluginEntry = Plugin & (() => Promise<RegisteredPlugin>);
-
-const plugin = (async (input?: PluginInput) => {
-  const hooks = createHooks();
-
-  if (input) {
-    return hooks;
-  }
-
-  return {
-    name: 'ospb-workflow-plugin' as const,
-    hooks,
-  };
-}) as PluginEntry;
-
-export default plugin;
-export * from './hooks';
-export * from './tool-check';
-export * from './workflow-state';
-export * from './workflow-tools';
+export const OspbWorkflowPlugin: Plugin = async (_input) => {
+  return createHooks();
+};
