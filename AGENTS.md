@@ -239,27 +239,27 @@ Read the plan and create bd tasks via `bd create`.
 
 ### /workflow-start
 
-Read and execute `bd ready` tasks (future: support parallel execution).
+读取并执行 `bd ready` 任务（未来支持并行执行）。
 
-**Task Claiming Restriction:**
-If Agent tries to claim a different `bd ready` task while in the middle of a workflow, the plugin blocks this and returns an error.
+**任务认领限制（强制）：**
+Agent 在工作流执行期间，只能认领当前验证链上的任务。若插件监听到 Agent 尝试认领其他 `bd ready` 任务，立即拦截并报错，禁止切换。
 
-**Validation Task Handling:**
-When Agent claims a Validate task:
-1. Plugin **pauses Agent execution** immediately
-2. Plugin invokes **codeReviewerAgent** to perform verification
-3. Verification checks:
-   - Phase output matches Spec design (for Spec-task-ref Validate tasks)
-   - All output since last Spec-ref conforms to Spec Goal (for larger Validate tasks)
-4. After verification completes:
-   - **Pass**: Agent proceeds to next task
-   - **Fail**: Plugin automatically **reopens all tasks** between the last Spec-task-ref/Spec-ref and the failed validation, then informs Agent of the failure reason and returns to previous task to re-execute sequentially
+**验证任务处理流程：**
+当 Agent 认领验证任务时：
+1. 插件立即**暂停 Agent 执行**
+2. 插件调用 **codeReviewerAgent** 进行验证
+3. 验证检查内容：
+   - Spec-task-ref 验证任务：检查对应阶段产出是否符合 Spec 设计
+   - Spec-ref 验证任务：检查上一次 Spec-ref 至今所有产出是否符合 Spec Goal
+4. 验证完成后：
+   - **失败**：将 codeReviewerAgent 的失败原因告知 Agent，自动 **reopen** 上一次 Spec-task-ref/Spec-ref 到失败验证点之间的所有任务，Agent 必须按依赖顺序重新认领并执行这些任务
+   - **成功**：通知 Agent 可以继续认领并执行其他任务
 
-**Failure Recovery:**
-When a Validate task fails:
-1. Plugin automatically **reopens all tasks** between the last Spec-task-ref/Spec-ref and the failed validation
-2. Requires Agent to return to the previous task and execute sequentially
-3. Informs Agent of the validation failure reason
+**失败恢复（强制）：**
+验证失败后，Agent 必须遵守以下强制规则：
+1. 按依赖顺序重新认领相关任务（不能跳过或认领其他任务）
+2. 从被 reopen 的第一个任务开始，顺序执行到验证任务
+3. 插件全程监听任务认领，拦截任何违规的认领尝试
 
 ---
 
