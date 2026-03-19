@@ -27,29 +27,28 @@
 
 - [ ] 1.3 实现 `workflow-propose` Tool
   - **输入**: 草案名称 (可选)
-  - **无参数行为**: 读取 `.workflow/drafts/` 下所有草案，通过 question tool 让用户选择
+  - **无参数行为**: 指示 Agent 读取 `.workflow/drafts/` 下所有草案，通过 question tool 让用户选择
   - **输出**: 生成 OpenSpec 文档 (proposal.md, design.md, specs/*)
   - **行为规范**:
-    1. 读取 `.workflow/drafts/<draft-name>.md`
+    1. **指示 Agent 读取** `.workflow/drafts/<draft-name>.md`
     2. 启动 **ProposeAgent** (非 subAgent，直接与用户对话)
     3. ProposeAgent 与用户沟通 OpenSpec 细节，直到用户满意
-    4. 生成 OpenSpec artifacts 到 `openspec/changes/<draft-name>/`
-  - **ProposeAgent 职责**:
-    - 直接与用户对话确认需求范围、设计决策等
-    - 直到用户满意后才生成 OpenSpec
+    4. 指示 Agent 生成 OpenSpec artifacts 到 `openspec/changes/<draft-name>/`
+  - **插件职责**: 编排工作流，指示 Agent 执行具体操作
   - **名称贯穿**: 草案名称 → change 名称 → 计划名称 → bd 任务 (统一)
   - **Spec-ref**: `workflow-plugin-core/spec.md` - "workflow-propose 工具"
 
 - [ ] 1.4 实现 `workflow-plan` Tool
   - **输入**: OpenSpec change 名称 (可选)
-  - **无参数行为**: 读取 `openspec/changes/` 下所有 change，通过 question tool 让用户选择
+  - **无参数行为**: 指示 Agent 读取 `openspec/changes/` 下所有 change，通过 question tool 让用户选择
   - **输出**: `.workflow/plans/<change-name>.md`
   - **行为规范**:
-    1. 读取对应 spec 文档
+    1. **指示 Agent 读取** `openspec/changes/<change-name>/` 下的 spec 文档
     2. **Planner Agent** 生成可执行计划，步骤粒度达到**可独立验证**程度
     3. **Planner Agent 同时确定任务依赖关系**，使用 DAG 结构
     4. 每个步骤标注 `Spec-task-ref` (小任务) 或 `Spec-ref` (阶段)
     5. 计划生成后**自动触发** Plan Review (调用 plan reviewer Agent)
+  - **插件职责**: 编排工作流，指示 Agent 执行具体操作
   - **依赖关系确定**: 由同一 Planner Agent 在规划时确定，而非独立 Agent
     - **证据来源**: 
       - Anthropic Orchestrator-workers 模式: "central LLM dynamically breaks down tasks and delegates" (https://www.anthropic.com/research/building-effective-agents)
@@ -60,16 +59,17 @@
 
 - [ ] 1.5 实现 `workflow-task` Tool
   - **输入**: 计划文件名 (可选)
-  - **无参数行为**: 读取 `.workflow/plans/` 下所有计划，通过 question tool 让用户选择
+  - **无参数行为**: 指示 Agent 读取 `.workflow/plans/` 下所有计划，通过 question tool 让用户选择
   - **输出**: 创建 bd 任务 + 生成 `.workflow/bd.md` 任务依赖图
   - **行为规范**:
-    1. 读取计划文件中 **Planner Agent 已确定的依赖关系**
+    1. **指示 Agent 读取** `.workflow/plans/<plan-name>.md`
     2. **解析 Spec-task-ref 标注**: 创建 `Valid:` 任务 (blocked by 产出任务)
     3. **解析 Spec-ref 标注**: 创建阶段级 `Valid:` 任务 (blocked by 该阶段所有产出)
     4. **TDD 强制**: 实现任务的测试任务作为 blocker
-    5. 通过 `$.bash('bd create "Impl: <描述>" --description "Spec-ref: spec.md#..." -t feature -p <n>')` 创建任务
-    6. 通过 `$.bash('bd dep add ...')` 建立依赖关系（由 Planner Agent 确定）
+    5. 指示 Agent 通过 `$.bash('bd create ...')` 创建任务
+    6. 指示 Agent 通过 `$.bash('bd dep add ...')` 建立依赖关系
     7. 生成并同步 `.workflow/bd.md` 任务依赖关系图
+  - **插件职责**: 编排工作流，指示 Agent 执行具体操作
   - **bd create 命令格式**:
     - 标题: `Impl: <描述>`, `Test: <描述>`, `Valid: <描述>` 等
     - `--description`: 包含 `Spec-ref: spec.md#requirement-name` 用于验证时追溯

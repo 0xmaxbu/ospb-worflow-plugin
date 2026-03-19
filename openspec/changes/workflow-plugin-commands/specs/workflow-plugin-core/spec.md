@@ -57,7 +57,7 @@ workflow-propose 工具 SHALL 将草案转换为 OpenSpec 文档。
 
 #### Scenario: 带参数执行
 - **WHEN** Agent 调用 `/workflow-propose <draft-name>`
-- **THEN** 读取 `.workflow/drafts/<draft-name>.md`，启动 ProposeAgent
+- **THEN** 指示 Agent 读取 `.workflow/drafts/<draft-name>.md`，启动 ProposeAgent
 
 #### Scenario: 无参数执行
 - **WHEN** Agent 调用 `/workflow-propose` 无参数
