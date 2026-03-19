@@ -107,6 +107,19 @@
     - `workflow-plugin-core/spec.md` - "workflow-start 工具"
     - `workflow-executor/spec.md` - 验证与失败恢复
 
+- [ ] 1.7 实现 `workflow-archive` Tool
+  - **输入**: change 名称 (可选)
+  - **无参数行为** (插件直接实现):
+    - 读取 `openspec/changes/` 下所有 change 目录名
+    - 通过 question tool 让用户选择
+    - **用户选择后自动进入带参数行为**
+  - **带参数行为** (插件直接调用工具):
+    - 调用 shell 工具执行 `$.bash('openspec archive <change-name>')` 归档 change
+    - 更新 `openspec/changes/archive/` 目录
+    - 调用写入工具清理 `.workflow/drafts/` 和 `.workflow/plans/` 中的相关文件
+  - **插件职责**: 直接调用工具，结果传递给 Agent
+  - **Spec-ref**: `workflow-plugin-core/spec.md` - "workflow-archive 工具"
+
 ## 2. Plan Review 功能
 
 > **说明**: Plan Review 在 1.4 workflow-plan 中自动触发，此处定义其具体实现
@@ -264,6 +277,7 @@
 | 1.5 | workflow-task-manager | 任务与依赖管理 |
 | 1.6 | workflow-plugin-core | workflow-start 工具 |
 | 1.6 | workflow-executor | 验证与失败恢复 |
+| 1.7 | workflow-plugin-core | workflow-archive 工具 |
 | 2.1-2.3 | workflow-plan-review | Plan Review 功能 |
 | 3.1-3.4 | workflow-task-manager | Task Manager 功能 |
 | 4.1-4.4 | workflow-executor | Executor 功能 |

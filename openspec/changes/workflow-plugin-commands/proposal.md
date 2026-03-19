@@ -12,6 +12,7 @@
 - **/workflow-plan** - 将 Spec 转换为可执行的详细计划
 - **/workflow-task** - 根据计划创建带依赖关系的 bd 任务
 - **/workflow-start** - 执行任务并处理验证、失败恢复
+- **/workflow-archive** - 归档已完成的 OpenSpec change
 
 > **实现方式**: 所有工作流工具使用 OpenCode Plugin SDK 的 `tool()` 函数实现为 TypeScript Tools，注册在 `hooks.tool` 对象中
 > **外部依赖**: bd (beads) CLI 工具由外部提供，插件通过 `$.bash()` 调用
@@ -21,7 +22,7 @@
 ### New Capabilities
 
 - **workflow-plugin-core** - 工作流插件核心命令框架
-  - 定义 6 个核心命令的接口和行为规范
+  - 定义 7 个核心命令的接口和行为规范
   - 命令调度器：根据命令类型路由到对应处理函数
   - 工作流状态管理：维护当前工作流上下文
 
