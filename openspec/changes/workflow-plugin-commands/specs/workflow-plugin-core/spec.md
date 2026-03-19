@@ -133,20 +133,27 @@ workflow-start 工具 SHALL 触发工作流执行模式。
 - **THEN** 抛出错误，要求 Agent 必须先调用 `verify-code` tool
 
 ### Requirement: workflow-archive 工具
-workflow-archive 工具 SHALL 归档完成的 OpenSpec change。
-
-#### Scenario: 带参数执行
-- **WHEN** Agent 调用 `/workflow-archive <change-name>`
-- **THEN** 执行 `openspec archive <change-name>` 归档 change
+workflow-archive 工具 SHALL 根据草案名称归档相关内容。
 
 #### Scenario: 无参数执行
 - **WHEN** Agent 调用 `/workflow-archive` 无参数
-- **THEN** 读取 `openspec/changes/` 下所有 change，通过 question tool 让用户选择
+- **THEN** 读取 `.workflow/drafts/` 下所有草案，通过 question tool 让用户选择
 
-#### Scenario: 归档内容
-- **WHEN** 归档 change 时
-- **THEN** 移动到 `openspec/changes/archive/` 目录
-- **THEN** 清理 `.workflow/drafts/` 和 `.workflow/plans/` 中的相关文件
+#### Scenario: 无 Spec 归档
+- **WHEN** 草案对应目录 `openspec/changes/<draft-name>/` 不存在时
+- **THEN** 直接清理 `.workflow/drafts/` 中对应文件
+
+#### Scenario: 有未完成 Spec 确认
+- **WHEN** 草案对应目录存在但 Spec 未完成时
+- **THEN** 通过 question tool 询问用户确认
+- **WHEN** 用户确认
+- **THEN** 归档草案文件 + 未完成的 Spec 目录
+- **WHEN** 用户取消
+- **THEN** 中断操作，不做任何归档
+
+#### Scenario: 有已完成的 Spec 归档
+- **WHEN** 草案对应目录存在且 Spec 已完成时
+- **THEN** 调用 `openspec archive <draft-name>` 归档 change
 
 ### Requirement: 工作流状态管理
 系统 SHALL 维护当前工作流上下文，包括：

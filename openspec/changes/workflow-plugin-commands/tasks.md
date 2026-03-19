@@ -108,15 +108,18 @@
     - `workflow-executor/spec.md` - 验证与失败恢复
 
 - [ ] 1.7 实现 `workflow-archive` Tool
-  - **输入**: change 名称 (可选)
+  - **输入**: draft 名称 (可选)
   - **无参数行为** (插件直接实现):
-    - 读取 `openspec/changes/` 下所有 change 目录名
-    - 通过 question tool 让用户选择
+    - 读取 `.workflow/drafts/` 下所有草案文件名
+    - 通过 question tool 让用户选择归档的草案
     - **用户选择后自动进入带参数行为**
   - **带参数行为** (插件直接调用工具):
-    - 调用 shell 工具执行 `$.bash('openspec archive <change-name>')` 归档 change
-    - 更新 `openspec/changes/archive/` 目录
-    - 调用写入工具清理 `.workflow/drafts/` 和 `.workflow/plans/` 中的相关文件
+    1. 根据草案名称查找对应的 `openspec/changes/<draft-name>/`
+    2. **无 Spec**: 直接归档草案文件，清理 `.workflow/drafts/` 中对应文件
+    3. **有 Spec 但未完成**: 通过 question tool 询问用户确认
+       - 用户确认 → 归档草案 + 未完成的 Spec 目录
+       - 用户取消 → 中断操作，不做任何归档
+    4. **有 Spec 且已完成**: 归档草案 + 调用 `$.bash('openspec archive <draft-name>')` 归档 change
   - **插件职责**: 直接调用工具，结果传递给 Agent
   - **Spec-ref**: `workflow-plugin-core/spec.md` - "workflow-archive 工具"
 
