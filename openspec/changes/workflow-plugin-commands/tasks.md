@@ -114,12 +114,13 @@
     - 通过 question tool 让用户选择归档的草案
     - **用户选择后自动进入带参数行为**
   - **带参数行为** (插件直接调用工具):
-    1. 根据草案名称查找对应的 `openspec/changes/<draft-name>/`
-    2. **无 Spec**: 直接归档草案文件，清理 `.workflow/drafts/` 中对应文件
+    1. 根据草案名称查找对应的草案文件和计划文件
+    2. **无 Spec**: 直接归档草案文件 + 计划文件（如果存在），清理 `.workflow/drafts/` 和 `.workflow/plans/` 中对应文件
     3. **有 Spec 但未完成**: 通过 question tool 询问用户确认
-       - 用户确认 → 归档草案 + 未完成的 Spec 目录
+       - 用户确认 → 归档草案文件 + 计划文件（如果存在）+ 未完成的 Spec 目录
        - 用户取消 → 中断操作，不做任何归档
-    4. **有 Spec 且已完成**: 归档草案 + 调用 `$.bash('openspec archive <draft-name>')` 归档 change
+    4. **有 Spec 且已完成**: 归档草案文件 + 计划文件（如果存在）+ 调用 `$.bash('openspec archive <draft-name>')` 归档 change
+  - **归档包含**: 草案 (.workflow/drafts/) + 计划 (.workflow/plans/) + Spec (openspec/changes/)
   - **插件职责**: 直接调用工具，结果传递给 Agent
   - **Spec-ref**: `workflow-plugin-core/spec.md` - "workflow-archive 工具"
 
