@@ -26,13 +26,23 @@
   - **Spec-ref**: `workflow-plugin-core/spec.md` - "workflow-explore 工具"
 
 - [ ] 1.3 实现 `workflow-propose` Tool
-  - **输入**: 草案名称 (可选，无参数时列出所有草案)
+  - **输入**: 草案名称 (可选)
+  - **无参数行为**: 读取 `.workflow/drafts/` 下所有草案，通过 question tool 让用户选择
   - **输出**: 生成 OpenSpec 文档 (proposal.md, design.md, specs/*)
-  - **执行**: 调用 `openspec-propose` Skill 生成 OpenSpec artifacts
+  - **行为规范**:
+    1. 读取 `.workflow/drafts/<draft-name>.md`
+    2. 启动 **ProposeAgent** (非 subAgent，直接与用户对话)
+    3. ProposeAgent 与用户沟通 OpenSpec 细节，直到用户满意
+    4. 生成 OpenSpec artifacts 到 `openspec/changes/<draft-name>/`
+  - **ProposeAgent 职责**:
+    - 直接与用户对话确认需求范围、设计决策等
+    - 直到用户满意后才生成 OpenSpec
+  - **名称贯穿**: 草案名称 → change 名称 → 计划名称 → bd 任务 (统一)
   - **Spec-ref**: `workflow-plugin-core/spec.md` - "workflow-propose 工具"
 
 - [ ] 1.4 实现 `workflow-plan` Tool
-  - **输入**: OpenSpec change 名称
+  - **输入**: OpenSpec change 名称 (可选)
+  - **无参数行为**: 读取 `openspec/changes/` 下所有 change，通过 question tool 让用户选择
   - **输出**: `.workflow/plans/<change-name>.md`
   - **行为规范**:
     1. 读取对应 spec 文档
@@ -49,7 +59,8 @@
   - **Spec-ref**: `workflow-plugin-core/spec.md` - "workflow-plan 工具"
 
 - [ ] 1.5 实现 `workflow-task` Tool
-  - **输入**: 计划文件名
+  - **输入**: 计划文件名 (可选)
+  - **无参数行为**: 读取 `.workflow/plans/` 下所有计划，通过 question tool 让用户选择
   - **输出**: 创建 bd 任务 + 生成 `.workflow/bd.md` 任务依赖图
   - **行为规范**:
     1. 读取计划文件中 **Planner Agent 已确定的依赖关系**
