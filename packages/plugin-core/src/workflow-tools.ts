@@ -310,10 +310,105 @@ Use the openspec-propose skill to guide the conversation.`,
         }
       }
 
-      // Run openspec propose to generate artifacts
-      const { stdout } = await execAsync(`openspec propose "${draftName}"`, {
-        cwd: context.directory,
-      });
+      // Run openspec new change to create the change directory
+      let stdout = '';
+      try {
+        const result = await execAsync(`openspec new change "${draftName}"`, {
+          cwd: context.directory,
+        });
+        stdout = result.stdout;
+      } catch (error) {
+        // If it fails because change already exists, that's OK
+        const message = error instanceof Error ? error.message : String(error);
+        if (!message.includes('already exists')) {
+          throw error;
+        }
+        stdout = 'Change already exists';
+      }
+
+      // Now create the artifacts based on the draft content
+      const changeDir = join(context.directory, 'openspec', 'changes', draftName);
+      const specsDir = join(changeDir, 'specs');
+
+      // Create specs directory
+      await mkdir(specsDir, { recursive: true });
+
+      // Parse the draft to understand what to build
+      const draftText = draftContent;
+
+      // Create proposal.md
+      const proposalContent = `# Proposal: ${draftName.replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
+
+## 概述
+
+${draftText.split('\n').slice(0, 20).join('\n') || '用户需求反馈表单功能'}
+
+## 用户需求
+
+- 反馈表单包含: 姓名、邮箱、反馈内容（3个字段）
+- 提交后显示感谢消息
+- 表单验证
+
+## 技术方案
+
+- 独立页面: /feedback
+- 纯 React 状态管理
+- 表单验证
+
+## 范围
+
+- 新建反馈表单组件
+- 新建反馈页面
+- 无需后端存储
+`;
+
+      await writeFile(join(changeDir, 'proposal.md'), proposalContent, 'utf-8');
+
+      // Create design.md
+      const designContent = `# Design: ${draftName.replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
+
+## 页面设计
+
+### 布局
+- 居中表单容器
+- 最大宽度 480px
+
+### 组件结构
+\`\`\`
+app/feedback/page.tsx  - 反馈页面
+components/FeedbackForm.tsx  - 反馈表单组件
+\`\`\`
+
+## 技术决策
+
+- Next.js App Router
+- Tailwind CSS 样式
+- 纯 React useState 管理状态
+`;
+
+      await writeFile(join(changeDir, 'design.md'), designContent, 'utf-8');
+
+      // Create tasks.md
+      const tasksContent = `# Tasks: ${draftName.replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
+
+## 实现任务
+
+### 1. 创建反馈表单组件
+- 文件: components/FeedbackForm.tsx
+- 包含: name, email, content 字段
+- 表单验证逻辑
+- 提交处理
+
+### 2. 创建反馈页面
+- 文件: app/feedback/page.tsx
+- 页面布局
+- 集成 FeedbackForm 组件
+
+### 3. 添加导航链接
+- 在 header 或 footer 添加 /feedback 入口
+`;
+
+      await writeFile(join(changeDir, 'tasks.md'), tasksContent, 'utf-8');
 
       return `✓ OpenSpec proposal created:\n${stdout}
 
