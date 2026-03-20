@@ -570,7 +570,7 @@ export const workflowTaskTool = tool({
 });
 
 export const workflowStartTool = tool({
-  description: 'Start executing workflow tasks from bd ready queue.',
+  description: 'Start executing workflow tasks from bd ready queue. Linus orchestrator will guide task execution.',
   args: {},
   async execute(_args, context) {
     try {
@@ -581,17 +581,65 @@ export const workflowStartTool = tool({
       interface BdTask {
         id: string;
         title: string;
+        priority: number;
       }
 
       const tasks: BdTask[] = JSON.parse(readyOutput);
 
       if (!tasks || tasks.length === 0) {
-        return 'No ready tasks in the queue.';
+        return '🎉 All tasks completed! No ready tasks in the queue.';
       }
 
-      const taskList = tasks.map((t) => `- ${t.id}: ${t.title}`).join('\n');
+      // Group tasks by type
+      const implTasks = tasks.filter((t) => t.title.startsWith('Impl:'));
+      const testTasks = tasks.filter((t) => t.title.startsWith('Test:'));
+      const validTasks = tasks.filter((t) => t.title.startsWith('Valid:'));
+      const otherTasks = tasks.filter((t) => !t.title.startsWith('Impl:') && !t.title.startsWith('Test:') && !t.title.startsWith('Valid:'));
 
-      return `Ready tasks:\n${taskList}\n\nUse 'bd update <task-id> --claim' to claim a task, then implement it.`;
+      let response = `🚀 Workflow Started - Linus Orchestrator Active\n`;
+      response += `${'='.repeat(50)}\n\n`;
+
+      response += `📋 Ready Tasks (${tasks.length}):\n`;
+
+      if (implTasks.length > 0) {
+        response += `\n🔨 Implementation Tasks:\n`;
+        implTasks.forEach((t) => {
+          response += `  • ${t.id}: ${t.title}\n`;
+        });
+      }
+
+      if (testTasks.length > 0) {
+        response += `\n🧪 Test Tasks:\n`;
+        testTasks.forEach((t) => {
+          response += `  • ${t.id}: ${t.title}\n`;
+        });
+      }
+
+      if (validTasks.length > 0) {
+        response += `\n✅ Verification Tasks:\n`;
+        validTasks.forEach((t) => {
+          response += `  • ${t.id}: ${t.title}\n`;
+        });
+      }
+
+      if (otherTasks.length > 0) {
+        response += `\n📌 Other Tasks:\n`;
+        otherTasks.forEach((t) => {
+          response += `  • ${t.id}: ${t.title}\n`;
+        });
+      }
+
+      response += `\n${'='.repeat(50)}\n`;
+      response += `Linus Workflow:\n`;
+      response += `1. Use 'bd update <id> --claim' to claim a task\n`;
+      response += `2. Implement the task and write tests\n`;
+      response += `3. For Valid: tasks - verification is REQUIRED before claim\n`;
+      response += `4. If verification fails - tasks will auto-reopen for rework\n`;
+      response += `5. Use 'bd ready' to check progress\n`;
+
+      response += `\n💡 Linus will guide you through the validation chain.\n`;
+
+      return response;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return `✗ Failed to get ready tasks: ${message}`;
