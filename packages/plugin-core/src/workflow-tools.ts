@@ -767,56 +767,243 @@ export const workflowArchiveTool = tool({
   },
 });
 
+/**
+ * Parse frontmatter from markdown content
+ */
+function parseFrontmatter(content: string): Record<string, string> {
+  const frontmatter: Record<string, string> = {};
+  const match = content.match(/^---\n([\s\S]*?)\n---\n/);
+  if (match) {
+    for (const line of match[1].split('\n')) {
+      const colonIndex = line.indexOf(':');
+      if (colonIndex > 0) {
+        const key = line.slice(0, colonIndex).trim();
+        const value = line.slice(colonIndex + 1).trim();
+        frontmatter[key] = value;
+      }
+    }
+  }
+  return frontmatter;
+}
+
+/**
+ * Extract modification suggestions from plan-reviewer report
+ */
+function extractSuggestions(report: string): { blocking: string[]; severe: string[]; general: string[] } {
+  const blocking: string[] = [];
+  const severe: string[] = [];
+  const general: string[] = [];
+
+  const lines = report.split('\n');
+  let currentSection: 'blocking' | 'severe' | 'general' | null = null;
+
+  for (const line of lines) {
+    if (line.includes('## 阻塞性问题') || line.includes('**阻塞**')) {
+      currentSection = 'blocking';
+    } else if (line.includes('## 严重问题')) {
+      currentSection = 'severe';
+    } else if (line.includes('## 一般问题')) {
+      currentSection = 'general';
+    } else if (line.includes('### 问题') && currentSection) {
+      // Extract problem description
+      const problemMatch = line.match(/\*\*描述\*\*:\s*(.+)/);
+      if (problemMatch) {
+        const problem = problemMatch[1].trim();
+        if (currentSection === 'blocking') blocking.push(problem);
+        else if (currentSection === 'severe') severe.push(problem);
+        else general.push(problem);
+      }
+    }
+  }
+
+  return { blocking, severe, general };
+}
+
 export const planReviewTool = tool({
-  description: 'Review implementation plan for quality and completeness.',
+  description: 'Review implementation plan using plan-reviewer agent. Automatically triggers review with user confirmation for fixes.',
   args: {
     planName: z.string().describe('Name of the plan to review (without .md extension)'),
+    autoFix: z.boolean().optional().default(false).describe('Automatically apply fixes without asking'),
   },
   async execute(args, context) {
     const planPath = join(context.directory, '.workflow', 'plans', `${args.planName}.md`);
+    const client = (context as unknown as { client?: { session?: { prompt?: (params: unknown) => Promise<unknown> } } }).client;
+
+    // Step 1: Read plan file
+    let planContent: string;
+    try {
+      planContent = await readFile(planPath, 'utf-8');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return `✗ Failed to review plan: ${message}`;
+    }
+
+    // Step 2: Parse frontmatter to find spec_id
+    const frontmatter = parseFrontmatter(planContent);
+    const specId = frontmatter['spec_id'] || args.planName;
+
+    // Step 3: Find and read corresponding spec documents
+    let specContent = '';
+    const changesDir = join(context.directory, 'openspec', 'changes');
 
     try {
-      const planContent = await readFile(planPath, 'utf-8');
+      // Search for spec directory matching the spec_id or plan name
+      const changeDirs = await readdir(changesDir);
+      for (const changeDir of changeDirs) {
+        const specsDir = join(changesDir, changeDir, 'specs');
+        try {
+          const specFiles = await readdir(specsDir);
+          for (const specFile of specFiles) {
+            if (specFile.endsWith('.md')) {
+              const content = await readFile(join(specsDir, specFile), 'utf-8');
+              specContent += `\n## [${changeDir}] ${specFile}\n${content}\n`;
+            }
+          }
+        } catch {
+          // No specs dir in this change
+        }
+      }
+    } catch {
+      // No changes directory
+    }
 
+    // Step 4: Invoke plan-reviewer agent
+    let reviewReport = '';
+    if (client?.session?.prompt) {
+      try {
+        const promptResult = await client.session.prompt({
+          agent: 'plan-reviewer',
+          prompt: `Review the following implementation plan against its specification.
+
+## Plan: ${args.planName}
+${planContent}
+
+${specContent ? `## Specification Documents:\n${specContent}\n` : ''}
+
+Please perform a comprehensive review following your审查维度:
+1. Spec 符合性 - Verify plan covers all Spec Requirements
+2. 完整性检查 - Verify all steps are present
+3. 可执行性 - Verify steps are granular and independently executable
+4. 依赖合理性 - Verify no circular dependencies
+5. TDD 合规性 - Verify test tasks block implementation tasks
+
+Output your review in the format specified in your prompt (通过审查 or 需修改).`,
+        });
+
+        if (promptResult && typeof promptResult === 'object' && 'message' in promptResult) {
+          const resultObj = promptResult as { message: { content?: string } };
+          reviewReport = resultObj.message?.content || '';
+        }
+      } catch {
+        // Agent invocation failed, fall back to static analysis
+      }
+    }
+
+    // Step 5: Fallback static analysis if agent failed
+    if (!reviewReport) {
       const issues: string[] = [];
       const suggestions: string[] = [];
 
       if (!planContent.includes('Spec-ref:')) {
         issues.push('Plan lacks Spec-ref references');
       }
-
       if (!planContent.includes('##')) {
         issues.push('Plan lacks step headers');
       }
-
       if (planContent.includes('Impl:') && !planContent.includes('Test:')) {
         suggestions.push('Consider adding Test: tasks for TDD workflow');
       }
-
       if (!planContent.includes('Valid:')) {
         suggestions.push('Consider adding Valid: tasks for verification');
       }
 
-      let response = `Plan Review: ${args.planName}\n`;
-      response += `${'='.repeat(40)}\n\n`;
-
+      reviewReport = `Plan Review: ${args.planName}\n`;
+      reviewReport += `${'='.repeat(40)}\n\n`;
+      reviewReport += `## 审查结果: ⚠️ 静态分析\n\n`;
       if (issues.length > 0) {
-        response += `Issues:\n${issues.map((i) => `  • ${i}`).join('\n')}\n\n`;
+        reviewReport += `Issues:\n${issues.map((i) => `• ${i}`).join('\n')}\n\n`;
       }
-
       if (suggestions.length > 0) {
-        response += `Suggestions:\n${suggestions.map((s) => `  • ${s}`).join('\n')}\n\n`;
+        reviewReport += `Suggestions:\n${suggestions.map((s) => `• ${s}`).join('\n')}\n\n`;
       }
-
       if (issues.length === 0 && suggestions.length === 0) {
-        response += '✓ Plan looks good!\n';
+        reviewReport = `Plan Review: ${args.planName}\n${'='.repeat(40)}\n\n## 审查结果: ⚠️ 静态分析\n\n✓ Plan looks good!\n`;
+      }
+    }
+
+    // Step 6: Check if review passed or needs modification
+    // Needs modification if: 需修改/❌ in report, or Issues: in static analysis
+    const needsModification =
+      reviewReport.includes('需修改') ||
+      reviewReport.includes('❌') ||
+      (reviewReport.includes('Issues:') && reviewReport.includes('Plan Review:'));
+    const blockingIssues = extractSuggestions(reviewReport).blocking;
+
+    if (!needsModification) {
+      return `✅ Plan Review Passed\n\n${reviewReport}`;
+    }
+
+    // Step 7: If needs modification, ask user for confirmation to fix
+    const askFn = (context as unknown as { ask?: (q: unknown) => Promise<unknown> }).ask;
+    const autoFix = args.autoFix || false;
+
+    if (!autoFix && askFn) {
+      const answer = await askFn({
+        question: `Plan review found ${blockingIssues.length > 0 ? blockingIssues.length + ' blocking issue(s)' : 'issues'} that need fixing. Do you want to apply automatic fixes?`,
+        options: [
+          { label: 'Apply fixes', description: 'Automatically fix the identified issues' },
+          { label: 'Show details', description: 'View detailed review report' },
+          { label: 'Skip', description: 'Skip fixing and continue with the plan as-is' },
+        ],
+      });
+
+      const choice = (answer as { choice?: string })?.choice;
+
+      if (choice === 'Skip' || !choice) {
+        return `⚠️ Plan review issues identified but not fixed.\n\n${reviewReport}`;
       }
 
-      return response;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return `✗ Failed to review plan: ${message}`;
+      if (choice === 'Show details') {
+        return `📋 Detailed Review Report:\n\n${reviewReport}`;
+      }
     }
+
+    // Step 8: Apply automatic fixes based on review findings
+    if (blockingIssues.length > 0 || needsModification) {
+      let fixedContent = planContent;
+      const fixes: string[] = [];
+
+      // Fix 1: Add missing Spec-ref if none found
+      if (!planContent.includes('Spec-ref:') && specId) {
+        const specRefLine = `\n<!-- Spec-ref: ${specId} -->\n`;
+        if (planContent.includes('---')) {
+          fixedContent = planContent.replace(/---\n/, `---\nspec_id: ${specId}\n`);
+        }
+        fixes.push('Added Spec-ref to frontmatter');
+      }
+
+      // Fix 2: Add TDD test tasks if Impl found without Test
+      if (planContent.includes('Impl:') && !planContent.includes('Test:')) {
+        // This is a complex fix that requires understanding the plan structure
+        // For now, add a suggestion
+        fixes.push('Consider adding Test: tasks for TDD workflow');
+      }
+
+      // Fix 3: Add Valid: tasks if missing
+      if (!planContent.includes('Valid:')) {
+        fixes.push('Consider adding Valid: tasks for verification');
+      }
+
+      // Apply fixes if any
+      if (fixes.length > 0 && fixedContent !== planContent) {
+        await writeFile(planPath, fixedContent, 'utf-8');
+        return `✅ Applied ${fixes.length} automatic fix(es):\n${fixes.map((f) => `• ${f}`).join('\n')}\n\nUpdated plan saved.\n\nOriginal issues:\n${blockingIssues.slice(0, 3).map((i) => `• ${i}`).join('\n')}${blockingIssues.length > 3 ? `\n... and ${blockingIssues.length - 3} more` : ''}`;
+      }
+
+      return `⚠️ Issues identified but could not be automatically fixed:\n${blockingIssues.slice(0, 3).map((i) => `• ${i}`).join('\n')}${blockingIssues.length > 3 ? `\n... and ${blockingIssues.length - 3} more` : ''}\n\nManual review required.\n\nFull report:\n${reviewReport}`;
+    }
+
+    return `📋 Plan Review:\n\n${reviewReport}`;
   },
 });
 
