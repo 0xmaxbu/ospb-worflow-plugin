@@ -324,14 +324,125 @@ export const workflowPlanTool = tool({
     specName: z.string().optional().describe('Name of the spec change (without .md extension)'),
   },
   async execute(args, context) {
-    const specArg = args.specName ? `"${args.specName}"` : '';
+    const changesDir = join(context.directory, 'openspec', 'changes');
+    let specName = args.specName;
+
+    // If no specName provided, list changes and let user select
+    if (!specName) {
+      try {
+        const changeDirs = await readdir(changesDir);
+
+        if (changeDirs.length === 0) {
+          return '✗ No OpenSpec changes found. Use /workflow-propose first to create a change.';
+        }
+
+        if (changeDirs.length === 1) {
+          specName = changeDirs[0];
+        } else {
+          // Use question tool to let user select
+          const ctx = context as unknown as { ask?: (q: unknown) => Promise<unknown> };
+          const askFn = ctx.ask;
+          if (askFn) {
+            const answer = await askFn({
+              question: 'Which change do you want to create a plan for?',
+              options: changeDirs.map((d: string) => ({
+                label: d,
+                description: `Create implementation plan for ${d}`,
+              })),
+            });
+            specName = (answer as { choice?: string })?.choice;
+          }
+
+          if (!specName) {
+            return '✗ No change selected. Please specify a change name.';
+          }
+        }
+      } catch {
+        return '✗ Failed to list changes. Make sure you have created a change with /workflow-propose first.';
+      }
+    }
+
+    const changeDir = join(changesDir, specName!);
 
     try {
-      const { stdout } = await execAsync(`openspec plan ${specArg}`, {
+      // Read spec documents for context
+      const specsDir = join(changeDir, 'specs');
+      let specContent = '';
+
+      try {
+        const specFiles = await readdir(specsDir);
+        for (const specFile of specFiles) {
+          if (specFile.endsWith('.md')) {
+            const content = await readFile(join(specsDir, specFile), 'utf-8');
+            specContent += `\n## ${specFile}\n${content}\n`;
+          }
+        }
+      } catch {
+        // No specs directory, continue without spec content
+      }
+
+      // Also read tasks.md if exists
+      const tasksPath = join(changeDir, 'tasks.md');
+      let tasksContent = '';
+      try {
+        tasksContent = await readFile(tasksPath, 'utf-8');
+      } catch {
+        // No tasks.md, continue
+      }
+
+      // Try to invoke planner agent via session.prompt()
+      let agentResponse = '';
+      const client = (context as unknown as { client?: { session?: { prompt?: (params: unknown) => Promise<unknown> } } }).client;
+
+      if (client?.session?.prompt) {
+        try {
+          const promptResult = await client.session.prompt({
+            agent: 'planner',
+            prompt: `Create a detailed implementation plan from this OpenSpec change.
+
+Change: ${specName}
+
+${tasksContent ? `Tasks:\n${tasksContent}\n` : ''}
+${specContent ? `Specs:\n${specContent}\n` : ''}
+
+Follow the openspec-plan skill to:
+1. Read all spec documents in ${specsDir}
+2. Generate a detailed plan with DAG structure
+3. Each step should be independently verifiable
+4. Mark steps with Spec-task-ref for small tasks, Spec-ref for phases
+5. Write plan to .workflow/plans/${specName}.md
+
+Use the openspec-plan or planner agent to generate the plan.`,
+          });
+
+          if (promptResult && typeof promptResult === 'object' && 'message' in promptResult) {
+            const resultObj = promptResult as { message: { content?: string } };
+            agentResponse = resultObj.message?.content || '';
+          }
+        } catch {
+          // Agent invocation failed, continue with openspec command
+        }
+      }
+
+      // Run openspec plan to generate the plan file
+      const { stdout } = await execAsync(`openspec plan "${specName}"`, {
         cwd: context.directory,
       });
 
-      return `✓ Implementation plan created:\n${stdout}`;
+      // After plan is created, trigger Plan Review
+      let reviewMessage = '';
+      const planPath = join(context.directory, '.workflow', 'plans', `${specName}.md`);
+      try {
+        await access(planPath);
+        reviewMessage = `\n\n📋 Plan Review triggered. Use /plan-review to review the plan before creating tasks.`;
+      } catch {
+        // Plan file not created
+      }
+
+      return `✓ Implementation plan created:\n${stdout}
+
+${agentResponse ? `Planner feedback:\n${agentResponse}` : ''}
+${reviewMessage}`;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return `✗ Failed to create plan: ${message}`;
