@@ -668,6 +668,10 @@ export const workflowStartTool = tool({
   description: 'Start executing workflow tasks from bd ready queue. Linus orchestrator will guide task execution.',
   args: {},
   async execute(_args, context) {
+    // Get client for agent invocation
+    const client = (context as { client?: { session?: { prompt?: (params: unknown) => Promise<unknown> } } }).client;
+
+    // First, get the ready tasks to include in the prompt
     try {
       const { stdout: readyOutput } = await execAsync('bd ready --json', {
         cwd: context.directory,
@@ -677,6 +681,8 @@ export const workflowStartTool = tool({
         id: string;
         title: string;
         priority: number;
+        status: string;
+        dependency_count: number;
       }
 
       const tasks: BdTask[] = JSON.parse(readyOutput);
@@ -685,11 +691,48 @@ export const workflowStartTool = tool({
         return '🎉 All tasks completed! No ready tasks in the queue.';
       }
 
-      // Group tasks by type
+      // Invoke Linus agent via session.prompt() if client is available
+      if (client?.session?.prompt) {
+        try {
+          const taskList = tasks
+            .map((t) => `• ${t.id}: ${t.title} (status: ${t.status}, dependencies: ${t.dependency_count})`)
+            .join('\n');
+
+          const promptResult = await client.session.prompt({
+            agent: 'linus',
+            prompt: `Start executing workflow tasks from the bd ready queue.
+
+Current ready tasks:
+${taskList}
+
+Your role as Linus orchestrator:
+1. Claim tasks from 'bd ready' queue in dependency order
+2. Follow TDD: write tests first (Test:), then implement (Impl:)
+3. For Valid: tasks - you MUST call verify-code before claiming
+4. Execute tasks and close them with 'bd close <id> --reason "Completed"'
+5. Handle verification failures by reopening tasks
+
+Read your agent prompt for detailed instructions on workflow execution.
+
+Begin by claiming and executing the first available task.`,
+          });
+
+          if (promptResult && typeof promptResult === 'object' && 'message' in promptResult) {
+            const resultObj = promptResult as { message: { content?: string } };
+            return resultObj.message?.content || 'Linus agent completed execution.';
+          }
+        } catch {
+          // Agent invocation failed, fall back to static guidance
+        }
+      }
+
+      // Fallback: return static task list if agent call failed
       const implTasks = tasks.filter((t) => t.title.startsWith('Impl:'));
       const testTasks = tasks.filter((t) => t.title.startsWith('Test:'));
       const validTasks = tasks.filter((t) => t.title.startsWith('Valid:'));
-      const otherTasks = tasks.filter((t) => !t.title.startsWith('Impl:') && !t.title.startsWith('Test:') && !t.title.startsWith('Valid:'));
+      const otherTasks = tasks.filter(
+        (t) => !t.title.startsWith('Impl:') && !t.title.startsWith('Test:') && !t.title.startsWith('Valid:'),
+      );
 
       let response = `🚀 Workflow Started - Linus Orchestrator Active\n`;
       response += `${'='.repeat(50)}\n\n`;
