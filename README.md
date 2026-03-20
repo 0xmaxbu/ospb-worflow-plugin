@@ -209,6 +209,54 @@ opencode
 
 ---
 
+## Linus 工作流执行说明
+
+`/workflow-start` 命令通过 **Linus** (Primary Agent) 协调执行 bd ready 队列中的任务。
+
+### Linus 工作流程
+
+1. **读取任务队列** - 从 bd ready 获取未完成的任务列表
+2. **任务分组** - 按类型分组显示 (Impl:, Test:, Valid:, Other:)
+3. **任务认领** - Agent 认领任务后开始执行
+4. **类型判断** - 根据任务前缀判断类型：
+   - `Impl:` → 实现任务，调用 Coder SubAgent
+   - `Test:` → 测试任务，调用 Coder SubAgent
+   - `Valid:` → 验证任务，调用 code-reviewer SubAgent
+5. **执行与验证** - 实现完成后通过 verify-code 验证
+6. **循环终止** - 当 ready 队列为空时结束
+
+### 任务类型说明
+
+| 类型 | 前缀 | 说明 | 阻塞关系 |
+|------|------|------|----------|
+| 实现 | `Impl:` | 功能实现任务 | 被 Test: 阻塞 |
+| 测试 | `Test:` | 测试编写任务 | 无 |
+| 验证 | `Valid:` | Spec 验证任务 | 被对应 Impl: 阻塞 |
+
+### 验证失败恢复
+
+当 `Valid:` 任务验证失败时：
+
+1. **验证失败** - code-reviewer 发现实现不符合 Spec
+2. **任务重开** - 系统自动 reopen 从失败验证点到对应产出任务之间的所有任务
+3. **顺序重做** - Agent 必须按依赖顺序重新认领并执行任务
+4. **再次验证** - 完成修复后重新通过 verify-code 验证
+
+### 调用示例
+
+```bash
+# 启动 Linus 工作流
+/workflow-start
+
+# Linus 将引导你完成整个工作流：
+# - 查看 ready 任务列表
+# - 认领并执行任务
+# - 验证实现是否符合 Spec
+# - 处理验证失败恢复
+```
+
+---
+
 ## 常见问题
 
 ### Q: 插件加载失败？
