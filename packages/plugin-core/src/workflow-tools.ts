@@ -114,6 +114,7 @@ export const workflowExploreTool = tool({
     try {
       await mkdir(draftDir, { recursive: true });
 
+      // Create initial draft structure
       const initialContent = `# Exploration: ${args.requirement}
 
 ## Initial Thoughts
@@ -135,7 +136,82 @@ export const workflowExploreTool = tool({
 
       await writeFile(draftPath, initialContent, 'utf-8');
 
-      return `✓ Created exploration draft: ${draftPath}\n\nUse this draft to investigate: ${args.requirement}`;
+      // Try to invoke explore agent via session.prompt() if client is available
+      let agentResponse = '';
+      const client = (context as { client?: { session?: { prompt?: (params: unknown) => Promise<unknown> } } }).client;
+      
+      if (client?.session?.prompt) {
+        try {
+          const promptResult = await client.session.prompt({
+            agent: 'explore',
+            prompt: `Explore the requirement: ${args.requirement}
+
+Draft file: ${draftPath}
+
+Explore this requirement thoroughly:
+1. Ask clarifying questions (what, why, expected results)
+2. Investigate the codebase for relevant patterns
+3. Identify implicit requirements and constraints
+4. Document key technical decisions
+
+Use the openspec-explore skill to guide your exploration process.`,
+          });
+          
+          if (promptResult && typeof promptResult === 'object' && 'message' in promptResult) {
+            const resultObj = promptResult as { message: { content?: string } };
+            agentResponse = resultObj.message?.content || '';
+          }
+        } catch {
+          // Agent invocation failed, continue without agent response
+        }
+      }
+
+      // Update draft with agent response if available
+      if (agentResponse) {
+        const updatedContent = `# Exploration: ${args.requirement}
+
+## Initial Thoughts
+
+- ${agentResponse.slice(0, 500)}
+
+## Questions
+
+-
+
+## Approach
+
+-
+
+## Notes
+
+${agentResponse}
+`;
+        await writeFile(draftPath, updatedContent, 'utf-8');
+      }
+
+      // Ask user to confirm draft direction
+      const askFn = (context as { ask?: (q: unknown) => Promise<unknown> }).ask;
+      if (askFn) {
+        try {
+          await askFn({
+            question: `Exploration draft created at ${draftPath}. Do you want to continue exploring, or proceed to proposal?`,
+            options: [
+              { label: 'Continue exploring', description: 'Investigate more with the explore agent' },
+              { label: 'Proceed to proposal', description: 'Convert draft to OpenSpec proposal' },
+            ],
+          });
+        } catch {
+          // User declined to answer, continue
+        }
+      }
+
+      return `✓ Exploration draft created: ${draftPath}
+
+${agentResponse ? 'Exploration agent has analyzed the requirement.' : 'Draft created - use the explore agent to investigate further.'}
+
+Next steps:
+1. Review the draft at: ${draftPath}
+2. Use /workflow-propose when ready to create OpenSpec documents`;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return `✗ Failed to create draft: ${message}`;

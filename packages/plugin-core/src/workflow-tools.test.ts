@@ -59,8 +59,9 @@ describe('WorkflowTools', () => {
         context,
       );
 
-      expect(result).toContain('✓ Created exploration draft');
+      expect(result).toContain('✓ Exploration draft created');
       expect(result).toContain('test-feature.md');
+      expect(result).toContain('Next steps');
       expect(mockWriteFile).toHaveBeenCalled();
       const writeCall = mockWriteFile.mock.calls[0];
       expect(writeCall[0]).toContain('test-feature.md');
@@ -89,7 +90,7 @@ describe('WorkflowTools', () => {
         context,
       );
 
-      expect(result).toContain('✓ Created exploration draft');
+      expect(result).toContain('✓ Exploration draft created');
       const writeCall = mockWriteFile.mock.calls[0];
       expect(writeCall[0]).toMatch(/exploration-\d+\.md$/);
     });
