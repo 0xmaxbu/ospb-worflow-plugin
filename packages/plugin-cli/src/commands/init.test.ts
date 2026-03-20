@@ -19,6 +19,22 @@ vi.mock('node:fs/promises', () => ({
   writeFile: writeFileMock,
 }));
 
+// Mock stdin for interactive prompts
+const stdinMock = {
+  once: vi.fn((event: string, callback: (data: { toString: () => string }) => void) => {
+    if (event === 'data') {
+      callback({ toString: () => 'n\n' }); // Default: 'n' for yes/no prompts
+    }
+  }),
+};
+
+vi.stubGlobal('process', {
+  ...process,
+  stdin: stdinMock,
+  stdout: { write: vi.fn() },
+  stderr: { write: vi.fn() },
+});
+
 import { initCommand } from './init';
 
 describe('initCommand', () => {
