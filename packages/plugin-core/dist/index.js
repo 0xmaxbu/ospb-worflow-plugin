@@ -1,4 +1,5 @@
 import { chatTransformHook, executeBeforeHook, sessionCompactingHook, sessionIdleHook, } from './hooks';
+import { workflowTools } from './workflow-tools';
 const registeredChatTransformHook = chatTransformHook;
 function createHooks() {
     return {
@@ -6,19 +7,9 @@ function createHooks() {
         'experimental.chat.system.transform': registeredChatTransformHook,
         'session.idle': sessionIdleHook,
         'experimental.session.compacting': sessionCompactingHook,
+        tool: workflowTools,
     };
 }
-const plugin = (async (input) => {
-    const hooks = createHooks();
-    if (input) {
-        return hooks;
-    }
-    return {
-        name: 'ospb-workflow-plugin',
-        hooks,
-    };
-});
-export default plugin;
-export * from './hooks';
-export * from './tool-check';
-export * from './workflow-state';
+export const OspbWorkflowPlugin = async (_input) => {
+    return createHooks();
+};

@@ -1,0 +1,24 @@
+
+> @ospb/plugin-core@0.1.0-alpha test /Volumes/SN350-1T 1/dev/ospb-worflow-plugin/packages/plugin-core
+> vitest run
+
+Testing types with tsc and vue-tsc is an experimental feature.
+Breaking changes might not follow SemVer, please pin Vitest's version when using it.
+
+ RUN  v3.2.4 /Volumes/SN350-1T 1/dev/ospb-worflow-plugin/packages/plugin-core
+
+ ✓ src/tool-check.test.ts (5 tests) 27ms
+ ✓ src/bd.test.ts (7 tests) 6ms
+ ✓ src/hooks/session-compacting.test.ts (2 tests) 3ms
+ ✓ src/hooks/session-idle.test.ts (6 tests) 4ms
+ ✓ src/workflow-state.test.ts (13 tests) 3ms
+ ✓ src/hooks/execute-before.test.ts (18 tests) 13ms
+ ✓ src/hooks/chat-transform.test.ts (7 tests) 5ms
+ ✓ src/workflow-tools.test.ts (12 tests) 271ms
+
+ Test Files  8 passed (8)
+      Tests  70 passed (70)
+Type Errors  no errors
+   Start at  20:30:47
+   Duration  742ms (transform 409ms, setup 0ms, collect 660ms, tests 331ms, environment 1ms, prepare 846ms)
+

@@ -1,0 +1,84 @@
+
+> @ospb/plugin-cli@0.1.0-alpha test /Volumes/SN350-1T 1/dev/ospb-worflow-plugin/packages/plugin-cli
+> vitest run
+
+
+ RUN  v1.6.1 /Volumes/SN350-1T 1/dev/ospb-worflow-plugin/packages/plugin-cli
+
+Require task verification before claiming new tasks? (y/N): stdout | src/commands/init.test.ts > initCommand > tool detection > should detect openspec when available
+🔍 Checking tools...
+  openspec: ✅
+  beads: ❌
+
+⚠️  Warning: Some required tools are not available.
+  Please install them to enable full workflow functionality.
+  - openspec: https://opencode.ai/docs/cli
+  - beads: Run `bd doctor` in OpenCode
+
+📋 Configuration Wizard
+----------------------
+
+Require task verification before claiming new tasks? (y/N): stdout | src/commands/init.test.ts > initCommand > tool detection > should detect beads when available
+🔍 Checking tools...
+  openspec: ❌
+  beads: ✅
+
+⚠️  Warning: Some required tools are not available.
+  Please install them to enable full workflow functionality.
+  - openspec: https://opencode.ai/docs/cli
+  - beads: Run `bd doctor` in OpenCode
+
+📋 Configuration Wizard
+----------------------
+
+Require task verification before claiming new tasks? (y/N): stdout | src/commands/init.test.ts > initCommand > tool detection > should indicate tools not available
+🔍 Checking tools...
+  openspec: ❌
+  beads: ❌
+
+⚠️  Warning: Some required tools are not available.
+  Please install them to enable full workflow functionality.
+  - openspec: https://opencode.ai/docs/cli
+  - beads: Run `bd doctor` in OpenCode
+
+📋 Configuration Wizard
+----------------------
+
+Require task verification before claiming new tasks? (y/N): stdout | src/commands/init.test.ts > initCommand > configuration > should create opencode.json config
+🔍 Checking tools...
+  openspec: ✅
+  beads: ✅
+
+📋 Configuration Wizard
+----------------------
+
+ ❯ src/commands/init.test.ts  (4 tests | 4 failed) 20012ms
+   ❯ src/commands/init.test.ts > initCommand > tool detection > should detect openspec when available
+     → Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+   ❯ src/commands/init.test.ts > initCommand > tool detection > should detect beads when available
+     → Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+   ❯ src/commands/init.test.ts > initCommand > tool detection > should indicate tools not available
+     → Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+   ❯ src/commands/init.test.ts > initCommand > configuration > should create opencode.json config
+     → Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/commands/init.test.ts > initCommand > tool detection > should detect openspec when available
+ FAIL  src/commands/init.test.ts > initCommand > tool detection > should detect beads when available
+ FAIL  src/commands/init.test.ts > initCommand > tool detection > should indicate tools not available
+ FAIL  src/commands/init.test.ts > initCommand > configuration > should create opencode.json config
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ Test Files  1 failed (1)
+      Tests  4 failed (4)
+   Start at  20:30:47
+   Duration  20.56s (transform 146ms, setup 0ms, collect 136ms, tests 20.01s, environment 0ms, prepare 160ms)
+
+ ELIFECYCLE  Test failed. See above for more details.
