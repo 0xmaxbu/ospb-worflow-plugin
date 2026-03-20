@@ -2,7 +2,7 @@ import { tool } from '@opencode-ai/plugin/tool';
 import { z } from 'zod';
 import { exec as childProcessExec } from 'child_process';
 import { promisify } from 'util';
-import { readFile, writeFile, access, mkdir } from 'fs/promises';
+import { readFile, writeFile, access, mkdir, readdir } from 'fs/promises';
 import { join } from 'path';
 import { verifyCode } from './verify-code';
 import { getWorkflowState } from './workflow-state';
@@ -222,19 +222,95 @@ Next steps:
 export const workflowProposeTool = tool({
   description: 'Convert exploration draft to OpenSpec specification documents.',
   args: {
-    draftName: z.string().describe('Name of the draft to convert (without .md extension)'),
+    draftName: z.string().optional().describe('Name of the draft to convert (without .md extension)'),
   },
   async execute(args, context) {
-    const draftPath = join(context.directory, 'workflow', 'drafts', `${args.draftName}.md`);
+    const draftsDir = join(context.directory, 'workflow', 'drafts');
+    let draftName = args.draftName;
+
+    // If no draftName provided, list drafts and let user select
+    if (!draftName) {
+      try {
+        const draftFiles = await readdir(draftsDir);
+        const markdownDrafts = draftFiles.filter((f) => f.endsWith('.md'));
+
+        if (markdownDrafts.length === 0) {
+          return '✗ No drafts found. Use /workflow-explore first to create a draft.';
+        }
+
+        if (markdownDrafts.length === 1) {
+          draftName = markdownDrafts[0].replace('.md', '');
+        } else {
+          // Use question tool to let user select
+          const ctx = context as unknown as { ask?: (q: unknown) => Promise<unknown> };
+          const askFn = ctx.ask;
+          if (askFn) {
+            const answer = await askFn({
+              question: 'Which draft do you want to convert to OpenSpec proposal?',
+              options: markdownDrafts.map((d: string) => ({
+                label: d.replace('.md', ''),
+                description: `Convert ${d} to OpenSpec documents`,
+              })),
+            });
+            draftName = (answer as { choice?: string })?.choice;
+          }
+
+          if (!draftName) {
+            return '✗ No draft selected. Please specify a draft name.';
+          }
+        }
+      } catch {
+        return '✗ Failed to list drafts. Make sure you have created a draft with /workflow-explore first.';
+      }
+    }
+
+    const draftPath = join(draftsDir, `${draftName}.md`);
 
     try {
-      await readFile(draftPath, 'utf-8');
+      // Read draft content
+      const draftContent = await readFile(draftPath, 'utf-8');
 
-      const { stdout } = await execAsync(`openspec propose "${args.draftName}"`, {
+      // Try to invoke propose agent via session.prompt() if client is available
+      let agentResponse = '';
+      const client = (context as { client?: { session?: { prompt?: (params: unknown) => Promise<unknown> } } }).client;
+
+      if (client?.session?.prompt) {
+        try {
+          const promptResult = await client.session.prompt({
+            agent: 'propose',
+            prompt: `Convert this exploration draft to OpenSpec documents.
+
+Draft content:
+${draftContent}
+
+Follow the openspec-propose skill to:
+1. Understand what the user wants to build
+2. Create the change with openspec new change "<name>"
+3. Generate all required artifacts (proposal.md, design.md, tasks.md)
+4. Discuss details with user until satisfied
+
+Use the openspec-propose skill to guide the conversation.`,
+          });
+
+          if (promptResult && typeof promptResult === 'object' && 'message' in promptResult) {
+            const resultObj = promptResult as { message: { content?: string } };
+            agentResponse = resultObj.message?.content || '';
+          }
+        } catch {
+          // Agent invocation failed, continue with direct openspec command
+        }
+      }
+
+      // Run openspec propose to generate artifacts
+      const { stdout } = await execAsync(`openspec propose "${draftName}"`, {
         cwd: context.directory,
       });
 
-      return `✓ OpenSpec proposal created:\n${stdout}\n\nDraft: ${draftPath}`;
+      return `✓ OpenSpec proposal created:\n${stdout}
+
+${agentResponse ? `Proposal agent feedback:\n${agentResponse}` : ''}
+Draft: ${draftPath}
+Change: openspec/changes/${draftName}/`;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return `✗ Failed to create proposal: ${message}`;
