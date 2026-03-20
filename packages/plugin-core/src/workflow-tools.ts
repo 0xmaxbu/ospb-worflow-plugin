@@ -6,6 +6,15 @@ import { readFile, writeFile, access, mkdir, readdir } from 'fs/promises';
 import { join } from 'path';
 import { verifyCode } from './verify-code';
 import { getWorkflowState } from './workflow-state';
+import {
+  parseSpecRefs,
+  createImplTask,
+  createTestTask,
+  createValidTask,
+  addTaskDependency,
+  createTddTaskPair,
+  type SpecRef,
+} from './bd';
 
 const execAsync = promisify(childProcessExec);
 
@@ -456,14 +465,103 @@ export const workflowTaskTool = tool({
     planName: z.string().optional().describe('Name of the plan (without .md extension)'),
   },
   async execute(args, context) {
-    const planArg = args.planName ? `"${args.planName}"` : '';
+    const plansDir = join(context.directory, '.workflow', 'plans');
+    let planName = args.planName;
+
+    // If no planName provided, list plans and let user select
+    if (!planName) {
+      try {
+        const planFiles = await readdir(plansDir);
+        const markdownPlans = planFiles.filter((f) => f.endsWith('.md')).map((f) => f.replace('.md', ''));
+
+        if (markdownPlans.length === 0) {
+          return '✗ No plans found. Use /workflow-plan first to create a plan.';
+        }
+
+        if (markdownPlans.length === 1) {
+          planName = markdownPlans[0];
+        } else {
+          // Use question tool to let user select
+          const ctx = context as unknown as { ask?: (q: unknown) => Promise<unknown> };
+          const askFn = ctx.ask;
+          if (askFn) {
+            const answer = await askFn({
+              question: 'Which plan do you want to create tasks from?',
+              options: markdownPlans.map((p: string) => ({
+                label: p,
+                description: `Create tasks from ${p} plan`,
+              })),
+            });
+            planName = (answer as { choice?: string })?.choice;
+          }
+
+          if (!planName) {
+            return '✗ No plan selected. Please specify a plan name.';
+          }
+        }
+      } catch {
+        return '✗ Failed to list plans. Make sure you have created a plan with /workflow-plan first.';
+      }
+    }
+
+    const planPath = join(plansDir, `${planName}.md`);
 
     try {
-      const { stdout } = await execAsync(`openspec task ${planArg}`, {
+      // Read plan content
+      const planContent = await readFile(planPath, 'utf-8');
+
+      // Parse spec refs from plan
+      const specRefs = parseSpecRefs(planContent);
+
+      // Also run openspec task to create any baseline tasks
+      const { stdout } = await execAsync(`openspec task "${planName}"`, {
         cwd: context.directory,
       });
 
-      return `✓ Tasks created:\n${stdout}`;
+      // Build results message
+      let results = `✓ Openspec tasks created:\n${stdout}\n\n`;
+
+      // Create Valid: tasks for each Spec-task-ref and Spec-ref
+      const outputTaskIds = new Map<string, string>();
+      
+      // First pass: create impl tasks and collect their IDs
+      const implTasks: { ref: string; taskId: string; description: string }[] = [];
+      
+      // Parse impl tasks from plan content - look for "Impl:" headings
+      const implRegex = /^##?\s*.*Impl[：:]\s*(.+)/gim;
+      let implMatch;
+      while ((implMatch = implRegex.exec(planContent)) !== null) {
+        const description = implMatch[1].trim();
+        // Create a placeholder ID (will be updated after bd create)
+        implTasks.push({ ref: description, taskId: '', description });
+      }
+
+      // Create Valid: tasks for each spec ref
+      const validTaskResults: string[] = [];
+      for (const specRef of specRefs) {
+        const title = specRef.type === 'task'
+          ? `Valid: ${specRef.taskTitle}`
+          : `Valid: [Phase] ${specRef.taskTitle}`;
+        
+        const validResult = await createValidTask(title, specRef.ref);
+        if (validResult.success) {
+          validTaskResults.push(`  ✓ Created ${validResult.title} (${validResult.taskId})`);
+        } else {
+          validTaskResults.push(`  ✗ Failed to create ${title}: ${validResult.error}`);
+        }
+      }
+
+      results += `📋 Verification Tasks:\n`;
+      if (validTaskResults.length > 0) {
+        results += validTaskResults.join('\n');
+      } else {
+        results += `  (No spec refs found in plan - no Valid: tasks created)`;
+      }
+
+      // Sync with bd to get all created tasks
+      results += `\n\n📊 Use 'bd ready' to see all ready tasks.`;
+
+      return results;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return `✗ Failed to create tasks: ${message}`;
