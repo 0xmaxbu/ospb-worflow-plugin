@@ -650,15 +650,116 @@ export const workflowStartTool = tool({
 export const workflowArchiveTool = tool({
   description: 'Archive a completed workflow change.',
   args: {
-    changeName: z.string().describe('Name of the change to archive (without .md extension)'),
+    changeName: z.string().optional().describe('Name of the change to archive (without .md extension)'),
   },
   async execute(args, context) {
-    try {
-      const { stdout } = await execAsync(`openspec archive "${args.changeName}"`, {
-        cwd: context.directory,
-      });
+    const draftsDir = join(context.directory, 'workflow', 'drafts');
+    const plansDir = join(context.directory, '.workflow', 'plans');
+    const changesDir = join(context.directory, 'openspec', 'changes');
+    let changeName = args.changeName;
 
-      return `✓ Change archived:\n${stdout}`;
+    // If no changeName provided, list drafts and let user select
+    if (!changeName) {
+      try {
+        const draftFiles = await readdir(draftsDir);
+        const markdownDrafts = draftFiles.filter((f) => f.endsWith('.md')).map((f) => f.replace('.md', ''));
+
+        if (markdownDrafts.length === 0) {
+          return '✗ No drafts found to archive.';
+        }
+
+        if (markdownDrafts.length === 1) {
+          changeName = markdownDrafts[0];
+        } else {
+          // Use question tool to let user select
+          const ctx = context as unknown as { ask?: (q: unknown) => Promise<unknown> };
+          const askFn = ctx.ask;
+          if (askFn) {
+            const answer = await askFn({
+              question: 'Which draft do you want to archive?',
+              options: markdownDrafts.map((d: string) => ({
+                label: d,
+                description: `Archive ${d} and related files`,
+              })),
+            });
+            changeName = (answer as { choice?: string })?.choice;
+          }
+
+          if (!changeName) {
+            return '✗ No draft selected for archiving.';
+          }
+        }
+      } catch {
+        return '✗ Failed to list drafts.';
+      }
+    }
+
+    const draftPath = join(draftsDir, `${changeName}.md`);
+    const planPath = join(plansDir, `${changeName}.md`);
+    const changeDir = join(changesDir, changeName!);
+
+    const results: string[] = [];
+
+    try {
+      // Check what exists to archive
+      const draftExists = await access(draftPath).then(() => true).catch(() => false);
+      const planExists = await access(planPath).then(() => true).catch(() => false);
+      const changeExists = await access(changeDir).then(() => true).catch(() => false);
+
+      // Determine archive scope
+      let archiveScope: 'draft-only' | 'draft-and-plan' | 'full' = 'draft-only';
+      if (draftExists && planExists && changeExists) {
+        archiveScope = 'full';
+      } else if (draftExists && planExists) {
+        archiveScope = 'draft-and-plan';
+      }
+
+      // If change exists but incomplete, ask for confirmation
+      if (changeExists && archiveScope !== 'full') {
+        const ctx = context as unknown as { ask?: (q: unknown) => Promise<unknown> };
+        const askFn = ctx.ask;
+        if (askFn) {
+          const confirm = await askFn({
+            question: `Change "${changeName}" has incomplete OpenSpec. Archive draft and plan only?`,
+            options: [
+              { label: 'Yes, archive draft+plan', description: 'Archive without completing OpenSpec' },
+              { label: 'No, cancel', description: 'Keep files for later' },
+            ],
+          });
+          const choice = (confirm as { choice?: string })?.choice;
+          if (choice?.includes('No')) {
+            return 'Archive cancelled.';
+          }
+        }
+      }
+
+      // Archive draft
+      if (draftExists) {
+        await writeFile(`${draftPath}.archive`, await readFile(draftPath, 'utf-8'), 'utf-8');
+        await execAsync(`rm "${draftPath}"`);
+        results.push(`✓ Archived draft: ${draftPath}`);
+      }
+
+      // Archive plan
+      if (planExists) {
+        await writeFile(`${planPath}.archive`, await readFile(planPath, 'utf-8'), 'utf-8');
+        await execAsync(`rm "${planPath}"`);
+        results.push(`✓ Archived plan: ${planPath}`);
+      }
+
+      // Archive change with openspec
+      if (changeExists && archiveScope === 'full') {
+        try {
+          const { stdout } = await execAsync(`openspec archive "${changeName}"`, {
+            cwd: context.directory,
+          });
+          results.push(`✓ OpenSpec change archived:\n${stdout}`);
+        } catch {
+          results.push(`⚠ Failed to archive OpenSpec change (may already be archived)`);
+        }
+      }
+
+      return `📦 Archive Complete:\n${results.join('\n')}`;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return `✗ Failed to archive: ${message}`;
